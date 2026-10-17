@@ -1,313 +1,40 @@
-```html
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0B0F17">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Climate Hub">
-    <title>SwitchBot Climate Hub</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace']
-                    },
-                    colors: {
-                        sbRed: '#EF4444',
-                        sbBlue: '#0EA5E9',
-                        sbTeal: '#14B8A6',
-                        sbAmber: '#F59E0B',
-                        sbDark: '#0B0F17',
-                        sbCard: '#151C28',
-                        sbBorder: '#232E42'
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-    <!-- SheetJS for Excel (.xlsx/.xls) and CSV parsing -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <style>
-        * {
-            -webkit-tap-highlight-color: transparent;
-            user-select: none;
-        }
-        body {
-            background-color: #0B0F17;
-            color: #F8FAFC;
-            overscroll-behavior-y: contain;
-        }
-        .chart-canvas-wrapper {
-            touch-action: none;
-            position: relative;
-        }
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #0B0F17;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #232E42;
-            border-radius: 3px;
-        }
-        .segmented-btn {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .pulse-dot {
-            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
-            70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-    </style>
-</head>
-<body class="min-h-screen flex flex-col antialiased selection:bg-red-500 selection:text-white">
-
-    <header class="sticky top-0 z-30 bg-sbDark/90 backdrop-blur-md border-b border-sbBorder px-4 py-3">
-        <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5">
-                <button id="backToOverviewBtn" class="hidden p-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-slate-200 active:scale-95 transition flex items-center gap-1.5 text-xs font-semibold" title="Back to All Rooms">
-                    <i data-lucide="arrow-left" class="w-4 h-4 text-red-400"></i>
-                    <span>All Rooms</span>
-                </button>
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20 shrink-0">
-                    <i data-lucide="thermometer-sun" class="w-5 h-5 text-white"></i>
-                </div>
-                <div>
-                    <div class="flex items-center gap-2">
-                        <h1 id="headerTitle" class="font-bold text-base sm:text-lg tracking-tight text-white">SwitchBot Climate Hub</h1>
-                        <span id="recordCountBadge" class="hidden text-[11px] font-mono uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0 pts</span>
-                    </div>
-                    <p id="headerSubtitle" class="text-xs text-slate-400">Multi-Room Telemetry & Spreadsheet Grapher</p>
-                </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-                <!-- Unit Toggle (°C / °F) -->
-                <button id="unitToggleBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-mono font-semibold text-slate-200 transition flex items-center gap-1.5" title="Toggle Temperature Unit">
-                    <span id="unitLabelC" class="text-red-400 font-bold">°C</span>
-                    <span class="text-slate-600">/</span>
-                    <span id="unitLabelF" class="text-slate-500">°F</span>
-                </button>
-
-                <!-- Detail View Specific Controls -->
-                <div id="detailHeaderActions" class="hidden items-center gap-2">
-                    <button id="demoDataBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Generate Realistic Sensor Data for this Room">
-                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
-                        <span class="hidden md:inline">Demo Data</span>
-                    </button>
-
-                    <button id="exportCsvBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Export Room Dataset">
-                        <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
-                        <span class="hidden md:inline">Export</span>
-                    </button>
-
-                    <button id="importBtn" class="px-3.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-xs font-semibold text-white shadow-lg shadow-red-500/25 transition flex items-center gap-1.5">
-                        <i data-lucide="file-plus-2" class="w-4 h-4"></i>
-                        <span>Import Sheet</span>
-                    </button>
-                </div>
-
-                <!-- Overview Specific Controls -->
-                <button id="addSensorHeaderBtn" class="px-3.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-xs font-semibold text-white shadow-lg shadow-red-500/25 transition flex items-center gap-1.5">
-                    <i data-lucide="plus" class="w-4 h-4"></i>
-                    <span>Add Room</span>
-                </button>
-
-                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.tsv,.txt" multiple class="hidden">
-            </div>
-        </div>
-    </header>
-
-    <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-4 py-4 space-y-4">
-
-        <!-- Toast / Notification Banner -->
-        <div id="toastBanner" class="hidden rounded-xl bg-emerald-950/90 border border-emerald-500/40 px-4 py-2.5 text-xs text-emerald-200 flex items-center justify-between transition-all">
-            <div class="flex items-center gap-2">
-                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0"></i>
-                <span id="toastMessage">Imported data successfully.</span>
-            </div>
-            <button onclick="hideToast()" class="text-emerald-400 hover:text-white p-1">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i>
-            </button>
-        </div>
-
-        <!-- ==================== OVERVIEW VIEW (ALL ROOMS / SENSORS) ==================== -->
-        <div id="overviewSection" class="space-y-5">
-            <!-- Top Overview Banner -->
-            <div class="bg-gradient-to-r from-sbCard via-slate-900 to-sbCard border border-sbBorder rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
-                <div class="space-y-1">
-                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-0.5 rounded-full">
-                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 pulse-dot"></span>
-                        <span>Home Sensor Network</span>
-                    </div>
-                    <h2 class="text-lg sm:text-xl font-bold text-white">Your Rooms & Climate Sources</h2>
-                    <p class="text-xs text-slate-400 max-w-xl">
-                        Tap any room below to inspect its interactive Day/Week/Month/Year graphs or upload new spreadsheet logs specifically for that room.
-                    </p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2 shrink-0">
-                    <button id="backupAllBtn" class="px-3 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Download full backup of all rooms">
-                        <i data-lucide="hard-drive-download" class="w-3.5 h-3.5 text-sky-400"></i>
-                        <span>Backup All</span>
-                    </button>
-                    <button id="restoreBackupBtn" class="px-3 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Restore rooms from backup file">
-                        <i data-lucide="folder-up" class="w-3.5 h-3.5 text-amber-400"></i>
-                        <span>Restore</span>
-                    </button>
-                    <input type="file" id="backupFileInput" accept=".json" class="hidden">
-                </div>
-            </div>
-
-            <!-- Grid of Room Sensor Cards -->
-            <div id="sensorCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                <!-- Populated dynamically via JS -->
-            </div>
-        </div>
-
-        <!-- ==================== DETAIL VIEW (SINGLE SENSOR GRAPH SCREEN) ==================== -->
-        <div id="detailSection" class="hidden space-y-4">
-            <!-- Quick Room Switcher Bar -->
-            <div class="flex items-center justify-between gap-2 bg-sbCard/70 border border-sbBorder rounded-xl px-3 py-2">
-                <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5" id="quickRoomPills">
-                    <!-- Room pills populated dynamically -->
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button id="renameRoomBtn" class="p-1.5 rounded-lg bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-400 hover:text-white text-xs transition" title="Rename Room">
-                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button id="quickUploadRoomBtn" class="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-medium transition flex items-center gap-1">
-                        <i data-lucide="upload" class="w-3 h-3"></i>
-                        <span>Upload to <span id="activeRoomUploadLabel">Room</span></span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Time Scale Tabs (Day / Week / Month / Year) + Period Swiping Header -->
-            <section class="bg-sbCard border border-sbBorder rounded-2xl p-3 shadow-xl space-y-3">
-                <div class="grid grid-cols-4 gap-1.5 bg-sbDark p-1 rounded-xl border border-slate-800/80">
-                    <button data-scale="day" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-white bg-red-500 shadow-sm">Day</button>
-                    <button data-scale="week" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Week</button>
-                    <button data-scale="month" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Month</button>
-                    <button data-scale="year" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Year</button>
-                </div>
-
-                <!-- Date Period Navigation Bar -->
-                <div class="flex items-center justify-between gap-2 px-1">
-                    <button id="prevPeriodBtn" class="p-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-300 active:scale-95 transition flex items-center gap-1 text-xs font-medium">
-                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
-                        <span class="hidden sm:inline">Prev</span>
-                    </button>
-
-                    <div class="text-center">
-                        <div id="currentPeriodLabel" class="text-sm sm:text-base font-bold text-white tracking-tight">--</div>
-                        <div id="windowSubLabel" class="text-[11px] text-slate-400">24-Hour High-Resolution View</div>
-                    </div>
-
-                    <div class="flex items-center gap-1.5">
-                        <button id="jumpLatestBtn" class="px-2.5 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-red-400 transition" title="Jump to Latest Reading">
-                            Latest
-                        </button>
-                        <button id="nextPeriodBtn" class="p-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-300 active:scale-95 transition flex items-center gap-1 text-xs font-medium">
-                            <span class="hidden sm:inline">Next</span>
-                            <i data-lucide="chevron-right" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Live Scrubbing Readout Cards -->
-            <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div class="flex items-center justify-between">
-                        <span id="readoutStatusText" class="text-[11px] font-mono uppercase tracking-wider text-red-400 flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-red-500 pulse-dot"></span>
-                            Window Latest
-                        </span>
-                        <div class="flex items-center gap-1">
-                            <button id="stepPrevPointBtn" class="p-1 rounded bg-sbDark hover:bg-slate-800 text-slate-300 border border-slate-800" title="Step Back 1 Point">
-                                <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
-                            </button>
-                            <button id="stepNextPointBtn" class="p-1 rounded bg-sbDark hover:bg-slate-800 text-slate-300 border border-slate-800" title="Step Forward 1 Point">
-                                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="my-1">
-                        <div id="scrubTimeDisplay" class="text-2xl sm:text-3xl font-mono font-bold text-white tracking-tight">--:--</div>
-                        <div id="scrubDateDisplay" class="text-xs text-slate-400 mt-0.5 truncate">Tap graph to inspect</div>
-                    </div>
-                    <div class="text-[10px] text-slate-500 font-mono">Drag horizontally on graph</div>
-                </div>
-
-                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between relative overflow-hidden">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                            <span class="w-2.5 h-2.5 rounded-full bg-sbRed"></span>
-                            Temperature
-                        </span>
-                        <span id="tempComfortBadge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
-                    </div>
-                    <div class="mt-1.5 flex items-baseline gap-1">
-                        <span id="scrubTempValue" class="text-2xl sm:text-3xl font-mono font-bold text-red-400">--.-</span>
-                        <span class="text-xs font-mono text-slate-400 temp-unit-symbol">°C</span>
-                    </div>
-                    <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-                        <span>Min <strong id="statTempMin" class="text-slate-200">--</strong></span>
-                        <span>Avg <strong id="statTempAvg" class="text-slate-200">--</strong></span>
-                        <span>Max <strong id="statTempMax" class="text-slate-200">--</strong></span>
-                    </div>
-                </div>
-
-                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between relative overflow-hidden">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                            <span class="w-2.5 h-2.5 rounded-full bg-sbBlue"></span>
-                            Humidity
-                        </span>
-                        <span id="humComfortBadge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
-                    </div>
-                    <div class="mt-1.5 flex items-baseline gap-1">
-                        <span id="scrubHumValue" class="text-2xl sm:text-3xl font-mono font-bold text-sky-400">--.-</span>
-                        <span class="text-xs font-mono text-slate-400">%</span>
-                    </div>
-                    <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
-                        <span>Min <strong id="statHumMin" class="text-slate-200">--</strong></span>
-                        <span>Avg <strong id="statHumAvg" class="text-slate-200">--</strong></span>
-                        <span>Max <strong id="statHumMax" class="text-slate-200">--</strong></span>
-                    </div>
-                </div>
-
-                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                            <span class="w-2.5 h-2.5 rounded-full bg-sbTeal"></span>
-                            Dew Point & VPD
-                        </span>
-                        <button id="toggleExtraChartBtn" class="text-[10px] font-semibold text-teal-400 hover:underline">+ Show VPD / Dew</button>
-                    </div>
-                    <div class="mt-1.5 grid grid-cols-2 gap-2">
-                        <div>
-                            <div class="text-[10px] text-slate-400 uppercase font-mono">Dew Point</div>
-                            <div class="flex items-baseline gap-0.5">
-                                <span id="scrubDewValue" class="text-lg sm:text-xl font-mono font-bold text-teal-400">--.-</span>
-                                <span class="text-[10px] font-mono text-slate-400 temp-unit-symbol">°C</s
+name: Build Android APK
+on:
+push:
+branches: [ "main" ]
+workflow_dispatch:
+jobs:
+build-apk:
+runs-on: ubuntu-latest
+steps:
+- name: Checkout repository
+uses: actions/checkout@v4
+- name: Set up Node.js
+uses: actions/setup-node@v4
+with:
+node-version: '20'
+- name: Set up Java 21 for Android SDK
+uses: actions/setup-java@v4
+with:
+distribution: 'temurin'
+java-version: '21'
+- name: Setup Android SDK
+uses: android-actions/setup-android@v3
+- name: Prepare Web Assets & Capacitor Project
+run: |
+mkdir -p www
+cp index.html www/index.html
+npm init -y
+npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+npx cap init "SwitchBot Hub" "com.daz3691.homeswitch" --web-dir www
+npx cap add android
+- name: Compile Signed Standalone APK
+run: |
+cd android
+chmod +x gradlew
+./gradlew assembleDebug
+- name: Upload Ready-to-Install APK
+uses: actions/upload-artifact@v4
+with:
+name: SwitchBot-Climate-Hub-APK
+path: android/app/build/outputs/apk/debug/app-debug.apk
