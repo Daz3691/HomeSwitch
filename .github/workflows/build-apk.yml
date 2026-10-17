@@ -31,7 +31,7 @@
 },
 {
 "name": "Build Capacitor Android APK",
-"run": "mkdir -p appbuild/www && cp index.html appbuild/www/index.html && cd appbuild && npm init -y && npm pkg set name=homeswitch version=1.0.0 && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init SwitchBotHub com.daz3691.homeswitch --web-dir www && npx cap add android && cd android && chmod +x gradlew && ./gradlew assembleDebug"
+"run": "mkdir -p appbuild/www && cp index.html appbuild/www/index.html && cd appbuild && echo '{"name":"homeswitch","version":"1.0.0"}' > package.json && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init SwitchBotHub com.daz3691.homeswitch --web-dir www && npx cap add android && cd android && chmod +x gradlew && ./gradlew assembleDebug"
 },
 {
 "name": "Upload APK",
