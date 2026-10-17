@@ -31,12 +31,12 @@
 },
  {
  "name": "Prepare Web Assets & Capacitor Project",
- "run": "mkdir -p www && cp index.html www/index.html && npm init -y && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init SwitchBot Hub com.daz3691.homeswitch --web-dir www && npx cap add android"
+  "run": "mkdir -p www && cp index.html www/index.html && npm init -y && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init SwitchBot Hub com.daz3691.homeswitch --web-dir www && npx cap add android"
 },
-{
-"name": "Compile Signed Standalone APK",
+ {
+ "name": "Compile Signed Standalone APK",
 "run": "cd android && chmod +x gradlew && ./gradlew assembleDebug"
-},
+ },
 {
 "name": "Upload Ready-to-Install APK",
 "uses": "actions/upload-artifact@v4",
