@@ -29,9 +29,9 @@
 "name": "Setup Android SDK",
 "uses": "android-actions/setup-android@v3"
 },
-{
-"name": "Prepare Web Assets & Capacitor Project",
-"run": "mkdir -p www && cp index.html www/index.html && npm init -y && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init "SwitchBot Hub" "com.daz3691.homeswitch" --web-dir www && npx cap add android"
+ {
+ "name": "Prepare Web Assets & Capacitor Project",
+ "run": "mkdir -p www && cp index.html www/index.html && npm init -y && npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 && npx cap init SwitchBot Hub com.daz3691.homeswitch --web-dir www && npx cap add android"
 },
 {
 "name": "Compile Signed Standalone APK",
