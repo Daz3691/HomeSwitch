@@ -1,0 +1,2599 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0B0F17">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SwitchBot Hub">
+    <title>SwitchBot Multi-Room Climate Hub</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    },
+                    colors: {
+                        sbRed: '#EF4444',
+                        sbBlue: '#0EA5E9',
+                        sbTeal: '#14B8A6',
+                        sbAmber: '#F59E0B',
+                        sbDark: '#0B0F17',
+                        sbCard: '#151C28',
+                        sbBorder: '#232E42'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS for Excel (.xlsx/.xls) and CSV parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        body {
+            background-color: #0B0F17;
+            color: #F8FAFC;
+            overscroll-behavior-y: contain;
+        }
+        .chart-canvas-wrapper {
+            touch-action: none; /* Enables smooth horizontal scrubbing without page scroll hijack */
+            position: relative;
+        }
+        /* Custom subtle scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F17;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #232E42;
+            border-radius: 3px;
+        }
+        .segmented-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .pulse-dot {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-red-500 selection:text-white">
+
+    <header class="sticky top-0 z-30 bg-sbDark/90 backdrop-blur-md border-b border-sbBorder px-4 py-3">
+        <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            <!-- Brand & Navigation Header -->
+            <div class="flex items-center gap-2.5">
+                <button id="backToOverviewBtn" class="hidden p-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-slate-200 active:scale-95 transition flex items-center gap-1.5 text-xs font-semibold" title="Back to All Rooms">
+                    <i data-lucide="arrow-left" class="w-4 h-4 text-red-400"></i>
+                    <span>All Rooms</span>
+                </button>
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20 shrink-0">
+                    <i data-lucide="thermometer-sun" class="w-5 h-5 text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 id="headerTitle" class="font-bold text-base sm:text-lg tracking-tight text-white">SwitchBot Climate Hub</h1>
+                        <span id="recordCountBadge" class="hidden text-[11px] font-mono uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0 pts</span>
+                    </div>
+                    <p id="headerSubtitle" class="text-xs text-slate-400">Multi-Room Telemetry & Spreadsheet Grapher</p>
+                </div>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex items-center gap-2">
+                <!-- Install App Guide Button (Always visible on mobile & desktop) -->
+                <button id="installGuideBtn" onclick="document.getElementById('installModal').classList.remove('hidden')" class="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5" title="Download & Install as an App">
+                    <i data-lucide="smartphone" class="w-4 h-4 text-slate-950"></i>
+                    <span>Get App</span>
+                </button>
+
+                <!-- Unit Toggle (°C / °F) -->
+                <button id="unitToggleBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-mono font-semibold text-slate-200 transition flex items-center gap-1.5" title="Toggle Temperature Unit">
+                    <span id="unitLabelC" class="text-red-400 font-bold">°C</span>
+                    <span class="text-slate-600">/</span>
+                    <span id="unitLabelF" class="text-slate-500">°F</span>
+                </button>
+
+                <!-- Detail View Specific Controls -->
+                <div id="detailHeaderActions" class="hidden items-center gap-2">
+                    <button id="demoDataBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Generate Realistic Sensor Data for this Room">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span class="hidden md:inline">Demo Data</span>
+                    </button>
+
+                    <button id="exportCsvBtn" class="px-3 py-2 rounded-xl bg-sbCard hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Export Room Dataset">
+                        <i data-lucide="download" class="w-3.5 h-3.5 text-sky-400"></i>
+                        <span class="hidden md:inline">Export</span>
+                    </button>
+
+                    <button id="importBtn" class="px-3.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-xs font-semibold text-white shadow-lg shadow-red-500/25 transition flex items-center gap-1.5">
+                        <i data-lucide="file-plus-2" class="w-4 h-4"></i>
+                        <span>Import Sheet</span>
+                    </button>
+                </div>
+
+                <!-- Overview Specific Controls -->
+                <button id="addSensorHeaderBtn" class="px-3.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-xs font-semibold text-white shadow-lg shadow-red-500/25 transition flex items-center gap-1.5">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span>Add Room</span>
+                </button>
+
+                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.tsv,.txt" multiple class="hidden">
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-4 py-4 space-y-4">
+
+        <!-- Toast / Notification Banner -->
+        <div id="toastBanner" class="hidden rounded-xl bg-emerald-950/90 border border-emerald-500/40 px-4 py-2.5 text-xs text-emerald-200 flex items-center justify-between transition-all">
+            <div class="flex items-center gap-2">
+                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                <span id="toastMessage">Imported data successfully.</span>
+            </div>
+            <button onclick="hideToast()" class="text-emerald-400 hover:text-white p-1">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+        </div>
+
+        <!-- ==================== OVERVIEW VIEW (ALL ROOMS / SENSORS) ==================== -->
+        <div id="overviewSection" class="space-y-5">
+            <!-- Prominent Mobile App & Chrome Launcher Bar -->
+            <div class="bg-emerald-950/60 border border-emerald-500/40 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                <div class="flex items-start sm:items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 sm:mt-0">
+                        <i data-lucide="smartphone" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xs sm:text-sm font-bold text-emerald-200">Want this as a standalone Home Screen App in Chrome?</h3>
+                        <p class="text-[11px] text-emerald-300/80">Copy the code or download the file below to host it or open outside the Gemini app.</p>
+                    </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    <button onclick="copyFullAppCodeToClipboard()" class="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-xs font-bold text-slate-950 transition flex items-center gap-1.5 shadow">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        <span id="bannerCopyBtnText">Copy App Code</span>
+                    </button>
+                    <button onclick="document.getElementById('installModal').classList.remove('hidden')" class="px-3 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-emerald-500/40 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5">
+                        <i data-lucide="help-circle" class="w-3.5 h-3.5"></i>
+                        <span>How to Install</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Top Overview Banner -->
+            <div class="bg-gradient-to-r from-sbCard via-slate-900 to-sbCard border border-sbBorder rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+                <div class="space-y-1">
+                    <div class="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-0.5 rounded-full">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 pulse-dot"></span>
+                        <span>Home Sensor Network</span>
+                    </div>
+                    <h2 class="text-lg sm:text-xl font-bold text-white">Your Rooms & Climate Sources</h2>
+                    <p class="text-xs text-slate-400 max-w-xl">
+                        Tap any room below to inspect its interactive Day/Week/Month/Year graphs or upload new spreadsheet logs specifically for that room.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    <button id="backupAllBtn" class="px-3 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Download full backup of all rooms">
+                        <i data-lucide="hard-drive-download" class="w-3.5 h-3.5 text-sky-400"></i>
+                        <span>Backup All</span>
+                    </button>
+                    <button id="restoreBackupBtn" class="px-3 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-slate-300 transition flex items-center gap-1.5" title="Restore rooms from backup file">
+                        <i data-lucide="folder-up" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span>Restore</span>
+                    </button>
+                    <input type="file" id="backupFileInput" accept=".json" class="hidden">
+                </div>
+            </div>
+
+            <!-- Grid of Room Sensor Cards -->
+            <div id="sensorCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                <!-- Populated dynamically via JS -->
+            </div>
+        </div>
+
+        <!-- ==================== DETAIL VIEW (SINGLE SENSOR GRAPH SCREEN) ==================== -->
+        <div id="detailSection" class="hidden space-y-4">
+            <!-- Quick Room Switcher Bar -->
+            <div class="flex items-center justify-between gap-2 bg-sbCard/70 border border-sbBorder rounded-xl px-3 py-2">
+                <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5" id="quickRoomPills">
+                    <!-- Room pills populated dynamically -->
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button id="renameRoomBtn" class="p-1.5 rounded-lg bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-400 hover:text-white text-xs transition" title="Rename Room">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button id="quickUploadRoomBtn" class="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-medium transition flex items-center gap-1">
+                        <i data-lucide="upload" class="w-3 h-3"></i>
+                        <span>Upload to <span id="activeRoomUploadLabel">Room</span></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Time Scale Tabs (Day / Week / Month / Year) + Period Swiping Header -->
+            <section class="bg-sbCard border border-sbBorder rounded-2xl p-3 shadow-xl space-y-3">
+                <div class="grid grid-cols-4 gap-1.5 bg-sbDark p-1 rounded-xl border border-slate-800/80">
+                    <button data-scale="day" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-white bg-red-500 shadow-sm">Day</button>
+                    <button data-scale="week" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Week</button>
+                    <button data-scale="month" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Month</button>
+                    <button data-scale="year" class="scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white">Year</button>
+                </div>
+
+                <!-- Date Period Navigation Bar -->
+                <div class="flex items-center justify-between gap-2 px-1">
+                    <button id="prevPeriodBtn" class="p-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-300 active:scale-95 transition flex items-center gap-1 text-xs font-medium">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Prev</span>
+                    </button>
+
+                    <div class="text-center">
+                        <div id="currentPeriodLabel" class="text-sm sm:text-base font-bold text-white tracking-tight">--</div>
+                        <div id="windowSubLabel" class="text-[11px] text-slate-400">24-Hour High-Resolution View</div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <button id="jumpLatestBtn" class="px-2.5 py-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-xs font-medium text-red-400 transition" title="Jump to Latest Reading">
+                            Latest
+                        </button>
+                        <button id="nextPeriodBtn" class="p-2 rounded-xl bg-sbDark hover:bg-slate-800 border border-sbBorder text-slate-300 active:scale-95 transition flex items-center gap-1 text-xs font-medium">
+                            <span class="hidden sm:inline">Next</span>
+                            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Live Scrubbing Readout Cards -->
+            <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <!-- Active Timestamp Card -->
+                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span id="readoutStatusText" class="text-[11px] font-mono uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-red-500 pulse-dot"></span>
+                            Window Latest
+                        </span>
+                        <div class="flex items-center gap-1">
+                            <button id="stepPrevPointBtn" class="p-1 rounded bg-sbDark hover:bg-slate-800 text-slate-300 border border-slate-800" title="Step Back 1 Point">
+                                <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button id="stepNextPointBtn" class="p-1 rounded bg-sbDark hover:bg-slate-800 text-slate-300 border border-slate-800" title="Step Forward 1 Point">
+                                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="my-1">
+                        <div id="scrubTimeDisplay" class="text-2xl sm:text-3xl font-mono font-bold text-white tracking-tight">--:--</div>
+                        <div id="scrubDateDisplay" class="text-xs text-slate-400 mt-0.5 truncate">Tap graph to inspect</div>
+                    </div>
+                    <div class="text-[10px] text-slate-500 font-mono">Drag horizontally on graph</div>
+                </div>
+
+                <!-- Temperature Readout Card -->
+                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-sbRed"></span>
+                            Temperature
+                        </span>
+                        <span id="tempComfortBadge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+                    </div>
+                    <div class="mt-1.5 flex items-baseline gap-1">
+                        <span id="scrubTempValue" class="text-2xl sm:text-3xl font-mono font-bold text-red-400">--.-</span>
+                        <span class="text-xs font-mono text-slate-400 temp-unit-symbol">°C</span>
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                        <span>Min <strong id="statTempMin" class="text-slate-200">--</strong></span>
+                        <span>Avg <strong id="statTempAvg" class="text-slate-200">--</strong></span>
+                        <span>Max <strong id="statTempMax" class="text-slate-200">--</strong></span>
+                    </div>
+                </div>
+
+                <!-- Relative Humidity Readout Card -->
+                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-sbBlue"></span>
+                            Humidity
+                        </span>
+                        <span id="humComfortBadge" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+                    </div>
+                    <div class="mt-1.5 flex items-baseline gap-1">
+                        <span id="scrubHumValue" class="text-2xl sm:text-3xl font-mono font-bold text-sky-400">--.-</span>
+                        <span class="text-xs font-mono text-slate-400">%</span>
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                        <span>Min <strong id="statHumMin" class="text-slate-200">--</strong></span>
+                        <span>Avg <strong id="statHumAvg" class="text-slate-200">--</strong></span>
+                        <span>Max <strong id="statHumMax" class="text-slate-200">--</strong></span>
+                    </div>
+                </div>
+
+                <!-- Dew Point & VPD Card -->
+                <div class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-sbTeal"></span>
+                            Dew Point & VPD
+                        </span>
+                        <button id="toggleExtraChartBtn" class="text-[10px] font-semibold text-teal-400 hover:underline">+ Show VPD / Dew</button>
+                    </div>
+                    <div class="mt-1.5 grid grid-cols-2 gap-2">
+                        <div>
+                            <div class="text-[10px] text-slate-400 uppercase font-mono">Dew Point</div>
+                            <div class="flex items-baseline gap-0.5">
+                                <span id="scrubDewValue" class="text-lg sm:text-xl font-mono font-bold text-teal-400">--.-</span>
+                                <span class="text-[10px] font-mono text-slate-400 temp-unit-symbol">°C</span>
+                            </div>
+                        </div>
+                        <div class="border-l border-slate-800 pl-2">
+                            <div class="text-[10px] text-slate-400 uppercase font-mono">VPD</div>
+                            <div class="flex items-baseline gap-0.5">
+                                <span id="scrubVpdValue" class="text-lg sm:text-xl font-mono font-bold text-amber-400">--.--</span>
+                                <span class="text-[10px] font-mono text-slate-400">kPa</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 pt-2 border-t border-slate-800/80 text-[10px] text-slate-400 font-mono truncate">
+                        Auto-calculated from Temp & RH
+                    </div>
+                </div>
+            </section>
+
+            <!-- Interactive SwitchBot Graphs Section -->
+            <section class="bg-sbCard border border-sbBorder rounded-2xl p-3.5 sm:p-4 shadow-xl space-y-5">
+                <!-- Temperature Graph -->
+                <div>
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Temperature Curve</h3>
+                        </div>
+                        <span id="tempRangeText" class="text-xs font-mono text-slate-400">Span: --</span>
+                    </div>
+                    <div class="chart-canvas-wrapper h-52 sm:h-60 w-full bg-sbDark/70 rounded-xl border border-slate-800/80 overflow-hidden">
+                        <canvas id="tempCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                    </div>
+                </div>
+
+                <!-- Humidity Graph -->
+                <div>
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Relative Humidity (%)</h3>
+                        </div>
+                        <span id="humRangeText" class="text-xs font-mono text-slate-400">Span: --</span>
+                    </div>
+                    <div class="chart-canvas-wrapper h-48 sm:h-56 w-full bg-sbDark/70 rounded-xl border border-slate-800/80 overflow-hidden">
+                        <canvas id="humCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                    </div>
+                </div>
+
+                <!-- Optional Dew Point Graph -->
+                <div id="extraChartContainer" class="hidden">
+                    <div class="flex items-center justify-between mb-2 px-1">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
+                            <h3 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Dew Point Curve</h3>
+                        </div>
+                        <span class="text-xs font-mono text-slate-400">Condensation Threshold</span>
+                    </div>
+                    <div class="chart-canvas-wrapper h-44 w-full bg-sbDark/70 rounded-xl border border-slate-800/80 overflow-hidden">
+                        <canvas id="extraCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bottom Spreadsheet Dropzone & Import Log -->
+            <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Drag and Drop Spreadsheet Box -->
+                <div id="dropZone" class="md:col-span-2 bg-sbCard hover:bg-slate-800/60 border-2 border-dashed border-sbBorder hover:border-red-500/60 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition group">
+                    <div class="w-11 h-11 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 group-hover:scale-110 transition mb-2.5">
+                        <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+                    </div>
+                    <h4 class="text-sm font-bold text-white">Tap or Drop Spreadsheet to Update This Room</h4>
+                    <p class="text-xs text-slate-400 mt-1 max-w-md">
+                        Supports SwitchBot <code class="text-slate-200">.csv</code> exports, Excel <code class="text-slate-200">.xlsx / .xls</code>, or any custom temperature/humidity log. New rows automatically merge into the timeline.
+                    </p>
+                </div>
+
+                <!-- Room Import History & Management -->
+                <div class="bg-sbCard border border-sbBorder rounded-2xl p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-2.5">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-300">Room Import History</h4>
+                            <button id="clearDataBtn" class="text-[11px] text-rose-400 hover:underline">Clear Room</button>
+                        </div>
+                        <div id="importLogList" class="space-y-1.5 max-h-28 overflow-y-auto text-xs">
+                            <div class="text-slate-500 py-2">No imports yet.</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                        <span>Span: <strong id="datasetSpanLabel" class="text-slate-200">--</strong></span>
+                        <button id="manualMappingBtn" class="text-sky-400 hover:underline flex items-center gap-1">
+                            <i data-lucide="sliders-horizontal" class="w-3 h-3"></i>
+                            <span>Column Mapper</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Add / Edit Room Sensor Modal -->
+    <div id="sensorModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-sbCard border border-sbBorder rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="home" class="w-5 h-5 text-red-400"></i>
+                    <h3 id="sensorModalTitle" class="font-bold text-base text-white">Add New Room / Sensor</h3>
+                </div>
+                <button id="closeSensorModalBtn" class="text-slate-400 hover:text-white p-1">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Room or Sensor Name *</label>
+                    <input type="text" id="sensorNameInput" placeholder="e.g., Living Room, Kitchen, Baby Nursery, Greenhouse" class="w-full bg-sbDark border border-sbBorder rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500">
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1.5">Choose Icon</label>
+                    <div id="iconPickerGrid" class="grid grid-cols-6 gap-2">
+                        <button type="button" data-icon="sofa" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-red-500 text-red-400 flex items-center justify-center"><i data-lucide="sofa" class="w-4 h-4"></i></button>
+                        <button type="button" data-icon="utensils" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 flex items-center justify-center"><i data-lucide="utensils" class="w-4 h-4"></i></button>
+                        <button type="button" data-icon="bed-double" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 flex items-center justify-center"><i data-lucide="bed-double" class="w-4 h-4"></i></button>
+                        <button type="button" data-icon="flower-2" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 flex items-center justify-center"><i data-lucide="flower-2" class="w-4 h-4"></i></button>
+                        <button type="button" data-icon="cloud-sun" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 flex items-center justify-center"><i data-lucide="cloud-sun" class="w-4 h-4"></i></button>
+                        <button type="button" data-icon="warehouse" class="icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 flex items-center justify-center"><i data-lucide="warehouse" class="w-4 h-4"></i></button>
+                    </div>
+                </div>
+
+                <div id="initialSeedOptionWrap" class="pt-1">
+                    <label class="flex items-center gap-2 cursor-pointer text-slate-300">
+                        <input type="checkbox" id="seedDemoCheckbox" class="rounded bg-sbDark border-sbBorder text-red-500 focus:ring-0">
+                        <span>Pre-load with sample climate data (leave unchecked to start empty and upload your own file)</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button id="cancelSensorModalBtn" class="px-4 py-2 rounded-xl bg-sbDark hover:bg-slate-800 text-xs font-medium text-slate-300">Cancel</button>
+                <button id="saveSensorModalBtn" class="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-xs font-semibold text-white shadow-lg shadow-red-500/25">Save Room</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- How to Download & Install as App Modal -->
+    <div id="installModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-sbCard border border-sbBorder rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+                        <i data-lucide="globe" class="w-4 h-4 text-emerald-400"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-white">Open in Chrome & Install as App</h3>
+                        <p class="text-[11px] text-slate-400">How to break out of the Gemini app preview</p>
+                    </div>
+                </div>
+                <button id="closeInstallModalBtn" class="text-slate-400 hover:text-white p-1">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- Method 1: Gemini Share Link (Fastest on Phone) -->
+            <div class="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3.5 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Method 1: Gemini Public Link (Easiest)</span>
+                    <span class="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">No Coding</span>
+                </div>
+                <ol class="list-decimal list-inside text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                    <li>At the top or bottom of this Gemini screen, tap the <strong>Share</strong> icon <span class="text-slate-400">(or 3-dots menu)</span> and select <strong>"Share" → "Create public link"</strong>.</li>
+                    <li>Copy that link, open your <strong>Chrome</strong> app, and paste it into the address bar.</li>
+                    <li>Once open in Chrome, tap Chrome's <strong>3-dots menu</strong> (top-right) and tap <strong>"Add to Home screen"</strong>!</li>
+                </ol>
+            </div>
+
+            <!-- Method 2: Free Instant Web Hosting (Tiiny.host / Netlify Drop) -->
+            <div class="bg-sbDark border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-sky-400 uppercase tracking-wider">Method 2: Turn Into Your Own Website URL</span>
+                    <span class="text-[10px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded">True Web App</span>
+                </div>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                    Want a dedicated website URL that opens straight into the app without Gemini around it?
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button id="downloadStandaloneHtmlBtn" class="py-2.5 px-3 rounded-xl bg-red-500 hover:bg-red-600 text-xs font-semibold text-white shadow-lg shadow-red-500/20 flex items-center justify-center gap-1.5 transition">
+                        <i data-lucide="file-down" class="w-4 h-4"></i>
+                        <span>1. Download .HTML File</span>
+                    </button>
+                    <button id="copySourceCodeBtn" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5 transition">
+                        <i data-lucide="copy" class="w-4 h-4 text-sky-400"></i>
+                        <span id="copySourceBtnText">Or Copy App Code</span>
+                    </button>
+                </div>
+                <ol class="list-decimal list-inside text-[11px] text-slate-400 space-y-1 pt-1">
+                    <li>Tap <strong>"1. Download .HTML File"</strong> above (or if the Gemini app blocks downloads, tap <strong>"Copy App Code"</strong>).</li>
+                    <li>In Chrome, go to <strong>tiiny.host</strong> or <strong>app.netlify.com/drop</strong> (both free).</li>
+                    <li>Upload the <code class="text-slate-200">index.html</code> file (or paste the code). It will instantly give you your own <code class="text-emerald-400">https://...</code> website link!</li>
+                    <li>Open that link in Chrome and tap <strong>3-dots → Add to Home screen</strong>.</li>
+                </ol>
+            </div>
+
+            <!-- Native PWA Install Button (shown automatically if browser supports beforeinstallprompt) -->
+            <div id="nativePwaPromptWrap" class="hidden bg-emerald-950/60 border border-emerald-500/40 rounded-xl p-3.5 space-y-2">
+                <div class="text-xs font-bold text-emerald-300">Direct Browser Install Available!</div>
+                <button id="triggerNativePwaBtn" class="w-full py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-xs font-bold text-slate-950 transition">
+                    Install App to Home Screen / Desktop Now
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="mappingModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-sbCard border border-sbBorder rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="table-properties" class="w-5 h-5 text-red-400"></i>
+                    <h3 class="font-bold text-base text-white">Map Spreadsheet Columns</h3>
+                </div>
+                <button id="closeModalBtn" class="text-slate-400 hover:text-white p-1">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-400">
+                Verify or select which columns from <strong id="modalFileName" class="text-white">spreadsheet.csv</strong> correspond to Timestamp, Temperature, and Humidity.
+            </p>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Date / Timestamp Column *</label>
+                    <select id="mapTimeSelect" class="w-full bg-sbDark border border-sbBorder rounded-xl px-3 py-2 text-white focus:outline-none focus:border-red-500"></select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-300 font-medium mb-1">Temperature Column *</label>
+                        <select id="mapTempSelect" class="w-full bg-sbDark border border-sbBorder rounded-xl px-3 py-2 text-white focus:outline-none focus:border-red-500"></select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 font-medium mb-1">Source Temp Unit</label>
+                        <select id="mapTempUnitSelect" class="w-full bg-sbDark border border-sbBorder rounded-xl px-3 py-2 text-white focus:outline-none focus:border-red-500">
+                            <option value="auto">Auto-detect (°C / °F)</option>
+                            <option value="C">Celsius (°C)</option>
+                            <option value="F">Fahrenheit (°F)</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-slate-300 font-medium mb-1">Relative Humidity (%) Column</label>
+                    <select id="mapHumSelect" class="w-full bg-sbDark border border-sbBorder rounded-xl px-3 py-2 text-white focus:outline-none focus:border-red-500"></select>
+                </div>
+            </div>
+
+            <!-- Sample Preview Table -->
+            <div class="bg-sbDark rounded-xl p-2.5 border border-slate-800 overflow-x-auto">
+                <div class="text-[10px] font-mono uppercase text-slate-400 mb-1.5">First 3 Rows Preview</div>
+                <table id="modalPreviewTable" class="w-full text-left text-[11px] font-mono text-slate-300"></table>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button id="cancelModalBtn" class="px-4 py-2 rounded-xl bg-sbDark hover:bg-slate-800 text-xs font-medium text-slate-300">Cancel</button>
+                <button id="confirmMappingBtn" class="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-xs font-semibold text-white shadow-lg shadow-red-500/25">Merge & Update Graph</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Multi-Room Application State
+        const state = {
+            // Current screen: 'overview' | 'detail'
+            currentView: 'overview',
+            // Array of sensor room metadata: [{ id, name, icon, importHistory: [] }]
+            sensors: [],
+            // Active sensor ID currently viewed or targeted for upload
+            activeSensorId: null,
+            // Map of sensorId -> Map(timestamp -> { ts, tempC, hum, dewC, vpd })
+            sensorRecordsMap: new Map(),
+            // Active sensor's Map reference & sorted array for super fast scrubbing
+            recordsMap: new Map(),
+            sortedRecords: [],
+            // Currently visible records or aggregated buckets for the active window
+            viewPoints: [],
+            // Time scale: 'day' | 'week' | 'month' | 'year'
+            scale: 'day',
+            // Anchor timestamp (ms) representing the current period being inspected
+            anchorTs: Date.now(),
+            // Display unit: 'C' or 'F'
+            unit: 'C',
+            // Active scrubbed index inside viewPoints (null = defaults to latest point in window)
+            scrubIndex: null,
+            isScrubbing: false,
+            showExtraChart: false,
+            importHistory: [],
+            lastRawSheet: null,
+            editingSensorId: null,
+            selectedModalIcon: 'sofa',
+            deferredPwaPrompt: null
+        };
+
+        const SENSORS_META_KEY = 'switchbot_hub_sensors_meta_v2';
+        const SENSOR_DATA_PREFIX = 'switchbot_hub_records_v2_';
+        const LEGACY_STORAGE_KEY = 'switchbot_climate_records_v1';
+
+        // Thermodynamic Helper: Calculate Dew Point (°C) and VPD (kPa) from Temp (°C) and Humidity (%)
+        function computeDerivedMetrics(tempC, hum) {
+            if (tempC === null || isNaN(tempC) || hum === null || isNaN(hum)) {
+                return { dewC: null, vpd: null };
+            }
+            const clampedHum = Math.max(1, Math.min(100, hum));
+            // Magnus-Tetens approximation
+            const a = 17.27;
+            const b = 237.7;
+            const alpha = ((a * tempC) / (b + tempC)) + Math.log(clampedHum / 100.0);
+            const dewC = (b * alpha) / (a - alpha);
+
+            // Saturation Vapor Pressure (es) in kPa
+            const es = 0.61078 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+            const ea = es * (clampedHum / 100.0);
+            const vpd = Math.max(0, es - ea);
+
+            return {
+                dewC: Math.round(dewC * 10) / 10,
+                vpd: Math.round(vpd * 100) / 100
+            };
+        }
+
+        function formatTemp(tempC) {
+            if (tempC === null || tempC === undefined || isNaN(tempC)) return '--.-';
+            const val = state.unit === 'F' ? (tempC * 9 / 5) + 32 : tempC;
+            return val.toFixed(1);
+        }
+
+        function toDisplayTempNumber(tempC) {
+            if (tempC === null || tempC === undefined || isNaN(tempC)) return null;
+            return state.unit === 'F' ? (tempC * 9 / 5) + 32 : tempC;
+        }
+
+        function parseFlexibleTimestamp(rawVal) {
+            if (rawVal === null || rawVal === undefined || rawVal === '') return null;
+
+            // Excel Serial Date Number (e.g. 45210.5416)
+            if (typeof rawVal === 'number') {
+                if (rawVal > 20000 && rawVal < 80000) {
+                    // Excel epoch starts Dec 30, 1899
+                    const utcDays = rawVal - 25569;
+                    return Math.round(utcDays * 86400 * 1000);
+                }
+                // Unix epoch in seconds or milliseconds
+                if (rawVal > 1e11) return Math.round(rawVal);
+                if (rawVal > 1e9) return Math.round(rawVal * 1000);
+            }
+
+            if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
+                return rawVal.getTime();
+            }
+
+            const str = String(rawVal).trim();
+            if (!str) return null;
+
+            // Pure numeric string check
+            if (/^\d+(\.\d+)?$/.test(str)) {
+                const num = parseFloat(str);
+                if (num > 20000 && num < 80000) {
+                    return Math.round((num - 25569) * 86400 * 1000);
+                }
+                if (num > 1e11) return Math.round(num);
+                if (num > 1e9) return Math.round(num * 1000);
+            }
+
+            // Try native Date.parse first (handles ISO 8601, YYYY-MM-DD HH:mm:ss, etc.)
+            // Replace dots or slashes in YYYY.MM.DD
+            const normalizedIso = str.replace(/^(\d{4})[\/.](\d{1,2})[\/.](\d{1,2})/, '$1-$2-$3');
+            let parsed = Date.parse(normalizedIso);
+            if (!isNaN(parsed)) return parsed;
+
+            // Handle UK/EU DD/MM/YYYY HH:mm(:ss) format common in spreadsheets
+            const dmyMatch = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+            if (dmyMatch) {
+                let p1 = parseInt(dmyMatch[1], 10);
+                let p2 = parseInt(dmyMatch[2], 10);
+                let yr = parseInt(dmyMatch[3], 10);
+                if (yr < 100) yr += 2000;
+                const hr = dmyMatch[4] ? parseInt(dmyMatch[4], 10) : 0;
+                const min = dmyMatch[5] ? parseInt(dmyMatch[5], 10) : 0;
+                const sec = dmyMatch[6] ? parseInt(dmyMatch[6], 10) : 0;
+
+                // Disambiguate DD/MM vs MM/DD
+                let day = p1, month = p2;
+                if (p1 <= 12 && p2 > 12) {
+                    month = p1;
+                    day = p2;
+                }
+                const dt = new Date(yr, month - 1, day, hr, min, sec);
+                if (!isNaN(dt.getTime())) return dt.getTime();
+            }
+
+            return null;
+        }
+
+        function parseNumericCell(val) {
+            if (val === null || val === undefined || val === '') return null;
+            if (typeof val === 'number') return isNaN(val) ? null : val;
+            const cleaned = String(val).replace(/[^0-9.\-+]/g, '');
+            if (!cleaned) return null;
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? null : num;
+        }
+
+        // Auto-detect columns from headers
+        function detectColumns(headers) {
+            let timeCol = -1;
+            let tempCol = -1;
+            let humCol = -1;
+            let tempIsFahrenheit = false;
+
+            headers.forEach((h, idx) => {
+                const lower = String(h || '').toLowerCase().trim();
+                if (timeCol === -1 && (lower.includes('date') || lower.includes('time') || lower.includes('timestamp') || lower === 'ts' || lower.includes('recorded'))) {
+                    timeCol = idx;
+                }
+                if (tempCol === -1 && (lower.includes('temp') || lower.includes('°c') || lower.includes('°f') || lower.includes('celsius') || lower.includes('fahrenheit'))) {
+                    tempCol = idx;
+                    if (lower.includes('°f') || lower.includes('fahrenheit') || lower.endsWith('_f') || lower.includes('(f)')) {
+                        tempIsFahrenheit = true;
+                    }
+                }
+                if (humCol === -1 && (lower.includes('hum') || lower.includes('rh') || lower.includes('moisture') || lower.includes('%'))) {
+                    humCol = idx;
+                }
+            });
+
+            // Fallback positional defaults if spreadsheet has unconventional headers
+            if (timeCol === -1 && headers.length >= 1) timeCol = 0;
+            if (tempCol === -1 && headers.length >= 2) tempCol = timeCol === 0 ? 1 : 0;
+            if (humCol === -1 && headers.length >= 3) {
+                for (let i = 0; i < headers.length; i++) {
+                    if (i !== timeCol && i !== tempCol) {
+                        humCol = i;
+                        break;
+                    }
+                }
+            }
+
+            return { timeCol, tempCol, humCol, tempIsFahrenheit };
+        }
+
+        function getSensorSortedArray(sensorId) {
+            const map = state.sensorRecordsMap.get(sensorId);
+            if (!map) return [];
+            return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+        }
+
+        function setActiveSensor(sensorId) {
+            const sensor = state.sensors.find(s => s.id === sensorId);
+            if (!sensor) return;
+            state.activeSensorId = sensorId;
+
+            if (!state.sensorRecordsMap.has(sensorId)) {
+                state.sensorRecordsMap.set(sensorId, new Map());
+            }
+            state.recordsMap = state.sensorRecordsMap.get(sensorId);
+            state.importHistory = sensor.importHistory || [];
+            rebuildSortedRecords();
+
+            if (state.sortedRecords.length > 0) {
+                state.anchorTs = state.sortedRecords[state.sortedRecords.length - 1].ts;
+            } else {
+                state.anchorTs = Date.now();
+            }
+        }
+
+        function navigateToSensorDetail(sensorId) {
+            setActiveSensor(sensorId);
+            state.currentView = 'detail';
+            const sensor = state.sensors.find(s => s.id === sensorId);
+
+            document.getElementById('overviewSection').classList.add('hidden');
+            document.getElementById('detailSection').classList.remove('hidden');
+            document.getElementById('backToOverviewBtn').classList.remove('hidden');
+            document.getElementById('recordCountBadge').classList.remove('hidden');
+            document.getElementById('detailHeaderActions').classList.remove('hidden');
+            document.getElementById('detailHeaderActions').classList.add('flex');
+            document.getElementById('addSensorHeaderBtn').classList.add('hidden');
+
+            document.getElementById('headerTitle').textContent = sensor ? sensor.name : 'Sensor View';
+            document.getElementById('headerSubtitle').textContent = 'Tap or drag on graph to scrub exact reading';
+            document.getElementById('activeRoomUploadLabel').textContent = sensor ? sensor.name : 'Room';
+
+            renderQuickRoomPills();
+            refreshTimeWindow();
+            renderImportHistory();
+        }
+
+        function navigateToOverview() {
+            state.currentView = 'overview';
+            document.getElementById('detailSection').classList.add('hidden');
+            document.getElementById('overviewSection').classList.remove('hidden');
+            document.getElementById('backToOverviewBtn').classList.add('hidden');
+            document.getElementById('recordCountBadge').classList.add('hidden');
+            document.getElementById('detailHeaderActions').classList.add('hidden');
+            document.getElementById('detailHeaderActions').classList.remove('flex');
+            document.getElementById('addSensorHeaderBtn').classList.remove('hidden');
+
+            document.getElementById('headerTitle').textContent = 'SwitchBot Climate Hub';
+            document.getElementById('headerSubtitle').textContent = `${state.sensors.length} Room Sources Configured`;
+
+            renderOverviewCards();
+        }
+
+        function renderQuickRoomPills() {
+            const container = document.getElementById('quickRoomPills');
+            if (!container) return;
+            container.innerHTML = state.sensors.map(s => {
+                const isActive = s.id === state.activeSensorId;
+                const count = state.sensorRecordsMap.get(s.id)?.size || 0;
+                return `
+                    <button onclick="navigateToSensorDetail('${s.id}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
+                        isActive
+                            ? 'bg-red-500 text-white shadow-sm'
+                            : 'bg-sbDark text-slate-400 hover:text-white border border-slate-800'
+                    }">
+                        <i data-lucide="${s.icon || 'thermometer'}" class="w-3.5 h-3.5"></i>
+                        <span>${s.name}</span>
+                        <span class="text-[10px] font-mono opacity-75">(${count})</span>
+                    </button>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        function renderOverviewCards() {
+            const grid = document.getElementById('sensorCardsGrid');
+            if (!grid) return;
+
+            const unitSym = state.unit === 'F' ? '°F' : '°C';
+            document.getElementById('headerSubtitle').textContent = `${state.sensors.length} Room Sources Configured`;
+
+            const cardsHtml = state.sensors.map(sensor => {
+                const sorted = getSensorSortedArray(sensor.id);
+                const count = sorted.length;
+                const latest = count > 0 ? sorted[count - 1] : null;
+
+                // Last 24 hours stats from latest point
+                let minT = null, maxT = null, minH = null, maxH = null;
+                if (latest) {
+                    const cutoff = latest.ts - 86400000;
+                    for (let i = sorted.length - 1; i >= 0; i--) {
+                        const r = sorted[i];
+                        if (r.ts < cutoff) break;
+                        if (r.tempC !== null) {
+                            if (minT === null || r.tempC < minT) minT = r.tempC;
+                            if (maxT === null || r.tempC > maxT) maxT = r.tempC;
+                        }
+                        if (r.hum !== null) {
+                            if (minH === null || r.hum < minH) minH = r.hum;
+                            if (maxH === null || r.hum > maxH) maxH = r.hum;
+                        }
+                    }
+                }
+
+                const tempDisplay = latest ? formatTemp(latest.tempC) : '--.-';
+                const humDisplay = latest && latest.hum !== null ? latest.hum.toFixed(1) : '--.-';
+                const dewDisplay = latest ? formatTemp(latest.dewC) : '--.-';
+                const updatedStr = latest
+                    ? new Date(latest.ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                    : 'No spreadsheet uploaded yet';
+
+                // Comfort status badge
+                let comfortLabel = 'Empty';
+                let comfortClass = 'bg-slate-800 text-slate-400 border-slate-700';
+                if (latest && latest.tempC !== null) {
+                    if (latest.tempC < 18) {
+                        comfortLabel = 'Cool';
+                        comfortClass = 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+                    } else if (latest.tempC <= 25) {
+                        comfortLabel = 'Comfort';
+                        comfortClass = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+                    } else {
+                        comfortLabel = 'Warm';
+                        comfortClass = 'bg-red-500/15 text-red-300 border-red-500/30';
+                    }
+                }
+
+                return `
+                    <div onclick="navigateToSensorDetail('${sensor.id}')" class="bg-sbCard hover:bg-slate-800/75 border border-sbBorder hover:border-red-500/50 rounded-2xl p-4 flex flex-col justify-between transition-all cursor-pointer group shadow-lg relative">
+                        <!-- Top Row: Room Icon, Title & Quick Actions -->
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 group-hover:bg-red-500 group-hover:text-white transition">
+                                    <i data-lucide="${sensor.icon || 'sofa'}" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-base text-white group-hover:text-red-400 transition">${sensor.name}</h3>
+                                    <span class="text-[11px] font-mono text-slate-400">${count.toLocaleString()} readings</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full border ${comfortClass}">${comfortLabel}</span>
+                                <button onclick="event.stopPropagation(); deleteSensorRoom('${sensor.id}')" class="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition" title="Delete Room">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Middle Row: Big SwitchBot Style Temp & Humidity Readout -->
+                        <div class="grid grid-cols-2 gap-2.5 my-3.5 bg-sbDark/75 border border-slate-800/80 rounded-xl p-3">
+                            <div>
+                                <div class="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                                    <span>Temp</span>
+                                </div>
+                                <div class="flex items-baseline gap-0.5 mt-0.5">
+                                    <span class="text-2xl font-mono font-bold text-red-400">${tempDisplay}</span>
+                                    <span class="text-xs font-mono text-slate-400">${unitSym}</span>
+                                </div>
+                                <div class="text-[10px] font-mono text-slate-400 mt-1">
+                                    ${minT !== null ? `24h: ${formatTemp(minT)}°–${formatTemp(maxT)}°` : 'No 24h range'}
+                                </div>
+                            </div>
+
+                            <div class="border-l border-slate-800 pl-2.5">
+                                <div class="text-[10px] uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                                    <span>Humidity</span>
+                                </div>
+                                <div class="flex items-baseline gap-0.5 mt-0.5">
+                                    <span class="text-2xl font-mono font-bold text-sky-400">${humDisplay}</span>
+                                    <span class="text-xs font-mono text-slate-400">%</span>
+                                </div>
+                                <div class="text-[10px] font-mono text-slate-400 mt-1">
+                                    Dew: <span class="text-teal-400">${dewDisplay}${unitSym}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mini 24-Hour Sparkline Canvas -->
+                        <div class="h-12 w-full bg-sbDark/50 rounded-lg border border-slate-800/60 overflow-hidden mb-3 relative">
+                            <canvas id="sparkCanvas_${sensor.id}" class="w-full h-full block"></canvas>
+                        </div>
+
+                        <!-- Bottom Row: Timestamp & Direct Upload Button -->
+                        <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
+                            <span class="text-slate-400 truncate pr-2">Latest: <strong class="text-slate-300 font-mono">${updatedStr}</strong></span>
+                            <button onclick="event.stopPropagation(); triggerDirectUploadForSensor('${sensor.id}')" class="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500 text-red-300 hover:text-white border border-red-500/30 font-semibold transition flex items-center gap-1 shrink-0">
+                                <i data-lucide="file-up" class="w-3 h-3"></i>
+                                <span>Upload File</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add New Room Card at the end of the grid
+            const addCardHtml = `
+                <div onclick="openAddSensorModal()" class="bg-sbCard/40 hover:bg-sbCard border-2 border-dashed border-slate-800 hover:border-red-500/50 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition group min-h-[240px]">
+                    <div class="w-12 h-12 rounded-2xl bg-slate-800/80 group-hover:bg-red-500/20 border border-slate-700 group-hover:border-red-500/40 flex items-center justify-center text-slate-400 group-hover:text-red-400 mb-3 transition">
+                        <i data-lucide="plus" class="w-6 h-6"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-white">Add Another Room / Sensor</h3>
+                    <p class="text-xs text-slate-400 mt-1 max-w-[220px]">Create a separate source for Bedroom, Office, Greenhouse, or Outdoor Meter</p>
+                </div>
+            `;
+
+            grid.innerHTML = cardsHtml + addCardHtml;
+            lucide.createIcons();
+
+            // Draw mini sparklines for each card
+            requestAnimationFrame(() => {
+                state.sensors.forEach(s => drawRoomSparkline(s.id));
+            });
+        }
+
+        function drawRoomSparkline(sensorId) {
+            const canvas = document.getElementById(`sparkCanvas_${sensorId}`);
+            if (!canvas) return;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            if (rect.width === 0 || rect.height === 0) return;
+
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+
+            const sorted = getSensorSortedArray(sensorId);
+            const slice = sorted.slice(-48); // Last ~24h of readings
+            if (slice.length < 2) {
+                ctx.fillStyle = '#475569';
+                ctx.font = '500 10px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Tap "Upload File" to import room spreadsheet', rect.width / 2, rect.height / 2 + 3);
+                return;
+            }
+
+            let minV = Infinity, maxV = -Infinity;
+            slice.forEach(p => {
+                if (p.tempC !== null) {
+                    if (p.tempC < minV) minV = p.tempC;
+                    if (p.tempC > maxV) maxV = p.tempC;
+                }
+            });
+            if (minV === Infinity) return;
+
+            const span = Math.max(1, maxV - minV);
+            const padY = 6;
+            const h = rect.height - padY * 2;
+            const w = rect.width;
+
+            ctx.beginPath();
+            slice.forEach((p, idx) => {
+                const x = (idx / (slice.length - 1)) * w;
+                const y = padY + h - ((p.tempC - minV) / span) * h;
+                if (idx === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = '#EF4444';
+            ctx.lineWidth = 1.75;
+            ctx.stroke();
+        }
+
+        function triggerDirectUploadForSensor(sensorId) {
+            setActiveSensor(sensorId);
+            document.getElementById('fileInput').click();
+        }
+
+        function deleteSensorRoom(sensorId) {
+            if (state.sensors.length <= 1) {
+                showToast('You must keep at least one room in your hub.', true);
+                return;
+            }
+            const target = state.sensors.find(s => s.id === sensorId);
+            state.sensors = state.sensors.filter(s => s.id !== sensorId);
+            state.sensorRecordsMap.delete(sensorId);
+            try {
+                localStorage.removeItem(SENSOR_DATA_PREFIX + sensorId);
+            } catch (e) {}
+
+            if (state.activeSensorId === sensorId) {
+                setActiveSensor(state.sensors[0].id);
+            }
+            saveStateToStorage();
+            renderOverviewCards();
+            showToast(`Removed room "${target ? target.name : 'Sensor'}".`);
+        }
+
+        function mergeRecordsIntoState(newEntries, sourceName = 'Spreadsheet Import') {
+            if (!newEntries || newEntries.length === 0) {
+                showToast('No valid timestamped temperature rows found in file.', true);
+                return;
+            }
+
+            let addedCount = 0;
+            let updatedCount = 0;
+
+            for (const item of newEntries) {
+                // Round timestamp to nearest minute (60,000 ms) so slightly jittered imports merge cleanly
+                const normalizedTs = Math.round(item.ts / 60000) * 60000;
+                const existing = state.recordsMap.get(normalizedTs);
+
+                const tempC = item.tempC !== null && !isNaN(item.tempC)
+                    ? Math.round(item.tempC * 100) / 100
+                    : (existing ? existing.tempC : null);
+
+                const hum = item.hum !== null && !isNaN(item.hum)
+                    ? Math.round(Math.max(0, Math.min(100, item.hum)) * 10) / 10
+                    : (existing ? existing.hum : null);
+
+                if (tempC === null && hum === null) continue;
+
+                const derived = computeDerivedMetrics(tempC, hum);
+                const record = {
+                    ts: normalizedTs,
+                    tempC,
+                    hum,
+                    dewC: derived.dewC,
+                    vpd: derived.vpd
+                };
+
+                if (existing) {
+                    updatedCount++;
+                } else {
+                    addedCount++;
+                }
+                state.recordsMap.set(normalizedTs, record);
+            }
+
+            rebuildSortedRecords();
+
+            // Jump anchor to the newest timestamp in the newly imported batch so the user immediately sees the update
+            const newestImportedTs = Math.max(...newEntries.map(e => e.ts));
+            if (newestImportedTs && !isNaN(newestImportedTs)) {
+                state.anchorTs = newestImportedTs;
+            }
+
+            // Log import history for this specific room
+            const activeSensor = state.sensors.find(s => s.id === state.activeSensorId);
+            state.importHistory.unshift({
+                name: sourceName,
+                added: addedCount,
+                updated: updatedCount,
+                timestamp: Date.now()
+            });
+            if (state.importHistory.length > 15) state.importHistory.pop();
+            if (activeSensor) {
+                activeSensor.importHistory = state.importHistory;
+            }
+
+            saveStateToStorage();
+
+            // Automatically navigate into the room's detail graph if uploaded from the overview screen
+            if (state.currentView === 'overview') {
+                navigateToSensorDetail(state.activeSensorId);
+            } else {
+                renderQuickRoomPills();
+                refreshTimeWindow();
+                renderImportHistory();
+            }
+
+            const roomTitle = activeSensor ? activeSensor.name : 'Room';
+            showToast(`[${roomTitle}] Merged "${sourceName}": +${addedCount.toLocaleString()} new pts, ${updatedCount.toLocaleString()} updated.`);
+        }
+
+        function rebuildSortedRecords() {
+            state.sortedRecords = Array.from(state.recordsMap.values()).sort((a, b) => a.ts - b.ts);
+            document.getElementById('recordCountBadge').textContent = `${state.sortedRecords.length.toLocaleString()} pts`;
+
+            if (state.sortedRecords.length > 0) {
+                const first = new Date(state.sortedRecords[0].ts);
+                const last = new Date(state.sortedRecords[state.sortedRecords.length - 1].ts);
+                const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
+                document.getElementById('datasetSpanLabel').textContent = `${fmt(first)} → ${fmt(last)}`;
+            } else {
+                document.getElementById('datasetSpanLabel').textContent = 'Empty';
+            }
+        }
+
+        function saveStateToStorage() {
+            try {
+                // Save rooms metadata list
+                localStorage.setItem(SENSORS_META_KEY, JSON.stringify(state.sensors));
+                // Save active room's records compactly [ts, tempC, hum]
+                if (state.activeSensorId) {
+                    const slice = state.sortedRecords.slice(-15000).map(r => [r.ts, r.tempC, r.hum]);
+                    localStorage.setItem(SENSOR_DATA_PREFIX + state.activeSensorId, JSON.stringify(slice));
+                }
+            } catch (e) {
+                console.warn('Storage quota exceeded, keeping full dataset in memory.', e);
+            }
+        }
+
+        function saveAllSensorsToStorage() {
+            try {
+                localStorage.setItem(SENSORS_META_KEY, JSON.stringify(state.sensors));
+                for (const sensor of state.sensors) {
+                    const sorted = getSensorSortedArray(sensor.id);
+                    const slice = sorted.slice(-15000).map(r => [r.ts, r.tempC, r.hum]);
+                    localStorage.setItem(SENSOR_DATA_PREFIX + sensor.id, JSON.stringify(slice));
+                }
+            } catch (e) {
+                console.warn('Quota limit while saving all rooms:', e);
+            }
+        }
+
+        function loadStateFromStorage() {
+            try {
+                const metaRaw = localStorage.getItem(SENSORS_META_KEY);
+                if (metaRaw) {
+                    const parsedSensors = JSON.parse(metaRaw);
+                    if (Array.isArray(parsedSensors) && parsedSensors.length > 0) {
+                        state.sensors = parsedSensors;
+                        state.sensorRecordsMap.clear();
+
+                        for (const s of state.sensors) {
+                            const map = new Map();
+                            const rawData = localStorage.getItem(SENSOR_DATA_PREFIX + s.id);
+                            if (rawData) {
+                                const arr = JSON.parse(rawData);
+                                for (const [ts, tempC, hum] of arr) {
+                                    const derived = computeDerivedMetrics(tempC, hum);
+                                    map.set(ts, { ts, tempC, hum, dewC: derived.dewC, vpd: derived.vpd });
+                                }
+                            }
+                            state.sensorRecordsMap.set(s.id, map);
+                        }
+                        setActiveSensor(state.sensors[0].id);
+                        return true;
+                    }
+                }
+
+                // Check if user had single-sensor data from v1 and migrate it into "Living Room"
+                const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+                if (legacyRaw) {
+                    const arr = JSON.parse(legacyRaw);
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        const livingId = 'room_living';
+                        const kitchenId = 'room_kitchen';
+                        state.sensors = [
+                            { id: livingId, name: 'Living Room', icon: 'sofa', importHistory: [{ name: 'Previous Session Data', added: arr.length, updated: 0, timestamp: Date.now() }] },
+                            { id: kitchenId, name: 'Kitchen', icon: 'utensils', importHistory: [] }
+                        ];
+                        const livingMap = new Map();
+                        for (const [ts, tempC, hum] of arr) {
+                            const derived = computeDerivedMetrics(tempC, hum);
+                            livingMap.set(ts, { ts, tempC, hum, dewC: derived.dewC, vpd: derived.vpd });
+                        }
+                        state.sensorRecordsMap.set(livingId, livingMap);
+                        populateDemoDataForSensor(kitchenId, 60, 21.2, 58);
+                        setActiveSensor(livingId);
+                        saveAllSensorsToStorage();
+                        return true;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not load saved sensor records:', e);
+            }
+            return false;
+        }
+
+        function populateDemoDataForSensor(sensorId, daysCount = 90, baseTemp = 20.0, baseHum = 52) {
+            const map = new Map();
+            const now = Date.now();
+            const endTs = Math.floor(now / (15 * 60000)) * (15 * 60000);
+            const intervalMs = 30 * 60000;
+            const totalSteps = Math.floor((daysCount * 86400 * 1000) / intervalMs);
+
+            let weatherDriftTemp = 0;
+            let weatherDriftHum = 0;
+
+            for (let i = totalSteps; i >= 0; i--) {
+                const ts = endTs - (i * intervalMs);
+                const dt = new Date(ts);
+                const hour = dt.getHours() + dt.getMinutes() / 60;
+                const dayOfYear = Math.floor((ts - new Date(dt.getFullYear(), 0, 0).getTime()) / 86400000);
+
+                const seasonalBase = baseTemp + 3.0 * Math.sin(((dayOfYear - 105) / 365) * Math.PI * 2);
+                const diurnalCycle = -2.1 * Math.cos(((hour - 3.5) / 24) * Math.PI * 2);
+
+                weatherDriftTemp = weatherDriftTemp * 0.985 + (Math.random() - 0.5) * 0.35;
+                weatherDriftHum = weatherDriftHum * 0.985 + (Math.random() - 0.5) * 1.1;
+
+                const tempC = Math.round((seasonalBase + diurnalCycle + weatherDriftTemp) * 10) / 10;
+                const rawHum = baseHum - (diurnalCycle * 4.0) + weatherDriftHum + 5 * Math.sin((dayOfYear / 365) * Math.PI * 2);
+                const hum = Math.round(Math.max(26, Math.min(84, rawHum)) * 10) / 10;
+
+                const derived = computeDerivedMetrics(tempC, hum);
+                map.set(ts, { ts, tempC, hum, dewC: derived.dewC, vpd: derived.vpd });
+            }
+
+            state.sensorRecordsMap.set(sensorId, map);
+            const sensor = state.sensors.find(s => s.id === sensorId);
+            if (sensor) {
+                sensor.importHistory = [{
+                    name: `${sensor.name} Demo Data (${daysCount}d)`,
+                    added: map.size,
+                    updated: 0,
+                    timestamp: Date.now()
+                }];
+            }
+        }
+
+        function initializeDefaultRoomsWithDemo() {
+            state.sensors = [
+                { id: 'room_living', name: 'Living Room', icon: 'sofa', importHistory: [] },
+                { id: 'room_kitchen', name: 'Kitchen', icon: 'utensils', importHistory: [] },
+                { id: 'room_bedroom', name: 'Master Bedroom', icon: 'bed-double', importHistory: [] }
+            ];
+            populateDemoDataForSensor('room_living', 90, 20.5, 50);
+            populateDemoDataForSensor('room_kitchen', 90, 21.8, 57);
+            populateDemoDataForSensor('room_bedroom', 90, 18.8, 53);
+
+            setActiveSensor('room_living');
+            saveAllSensorsToStorage();
+        }
+
+        function generateRealisticDemoData(daysCount = 90) {
+            if (!state.activeSensorId) return;
+            populateDemoDataForSensor(state.activeSensorId, daysCount, 20.2, 52);
+            setActiveSensor(state.activeSensorId);
+            saveStateToStorage();
+            refreshTimeWindow();
+            renderImportHistory();
+        }
+
+        function getWindowBounds(anchorTs, scale) {
+            const d = new Date(anchorTs);
+            let start, end, label, subLabel;
+
+            if (scale === 'day') {
+                start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+                end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+                label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                subLabel = '24-Hour High-Resolution View';
+            } else if (scale === 'week') {
+                // Monday-based week
+                const dayOfWeek = (d.getDay() + 6) % 7;
+                const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dayOfWeek, 0, 0, 0, 0);
+                const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6, 23, 59, 59, 999);
+                start = mon.getTime();
+                end = sun.getTime();
+                const fmtShort = (dt) => dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                label = `${fmtShort(mon)} – ${fmtShort(sun)}, ${sun.getFullYear()}`;
+                subLabel = '7-Day Hourly Aggregated View';
+            } else if (scale === 'month') {
+                const first = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+                const last = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+                start = first.getTime();
+                end = last.getTime();
+                label = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+                subLabel = 'Monthly 6-Hour Aggregated View (with Min/Max Band)';
+            } else {
+                // Year
+                const first = new Date(d.getFullYear(), 0, 1, 0, 0, 0, 0);
+                const last = new Date(d.getFullYear(), 11, 31, 23, 59, 59, 999);
+                start = first.getTime();
+                end = last.getTime();
+                label = `Year ${d.getFullYear()}`;
+                subLabel = 'Annual Daily Average & Range View';
+            }
+
+            return { start, end, label, subLabel };
+        }
+
+        function shiftPeriod(direction) {
+            const d = new Date(state.anchorTs);
+            if (state.scale === 'day') {
+                d.setDate(d.getDate() + direction);
+            } else if (state.scale === 'week') {
+                d.setDate(d.getDate() + (direction * 7));
+            } else if (state.scale === 'month') {
+                d.setMonth(d.getMonth() + direction);
+            } else if (state.scale === 'year') {
+                d.setFullYear(d.getFullYear() + direction);
+            }
+            state.anchorTs = d.getTime();
+            refreshTimeWindow();
+        }
+
+        // Filter and bucket data so Day/Week/Month/Year graphs are super responsive and smooth
+        function refreshTimeWindow() {
+            const { start, end, label, subLabel } = getWindowBounds(state.anchorTs, state.scale);
+            document.getElementById('currentPeriodLabel').textContent = label;
+            document.getElementById('windowSubLabel').textContent = subLabel;
+
+            // Update active segmented tab styling
+            document.querySelectorAll('.scale-tab').forEach(btn => {
+                if (btn.dataset.scale === state.scale) {
+                    btn.className = 'scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-white bg-red-500 shadow-sm';
+                } else {
+                    btn.className = 'scale-tab segmented-btn py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-400 hover:text-white';
+                }
+            });
+
+            // Filter records inside [start, end]
+            const rawInWindow = state.sortedRecords.filter(r => r.ts >= start && r.ts <= end);
+
+            // Bucket resolution depending on scale to preserve SwitchBot smooth curves + min/max envelope
+            let bucketMs = 0;
+            if (state.scale === 'day') {
+                bucketMs = rawInWindow.length > 300 ? 15 * 60000 : 0; // Raw points or 15-min
+            } else if (state.scale === 'week') {
+                bucketMs = 60 * 60000; // 1-hour buckets
+            } else if (state.scale === 'month') {
+                bucketMs = 6 * 3600 * 1000; // 6-hour buckets
+            } else if (state.scale === 'year') {
+                bucketMs = 24 * 3600 * 1000; // 1-day buckets
+            }
+
+            if (bucketMs === 0 || rawInWindow.length === 0) {
+                state.viewPoints = rawInWindow.map(r => ({
+                    ts: r.ts,
+                    tempC: r.tempC,
+                    tempMinC: r.tempC,
+                    tempMaxC: r.tempC,
+                    hum: r.hum,
+                    humMin: r.hum,
+                    humMax: r.hum,
+                    dewC: r.dewC,
+                    vpd: r.vpd
+                }));
+            } else {
+                const buckets = new Map();
+                for (const r of rawInWindow) {
+                    const bKey = Math.floor((r.ts - start) / bucketMs) * bucketMs + start + Math.floor(bucketMs / 2);
+                    let b = buckets.get(bKey);
+                    if (!b) {
+                        b = {
+                            ts: bKey,
+                            tempSum: 0, tempCount: 0, tempMinC: Infinity, tempMaxC: -Infinity,
+                            humSum: 0, humCount: 0, humMin: Infinity, humMax: -Infinity
+                        };
+                        buckets.set(bKey, b);
+                    }
+                    if (r.tempC !== null && !isNaN(r.tempC)) {
+                        b.tempSum += r.tempC;
+                        b.tempCount++;
+                        if (r.tempC < b.tempMinC) b.tempMinC = r.tempC;
+                        if (r.tempC > b.tempMaxC) b.tempMaxC = r.tempC;
+                    }
+                    if (r.hum !== null && !isNaN(r.hum)) {
+                        b.humSum += r.hum;
+                        b.humCount++;
+                        if (r.hum < b.humMin) b.humMin = r.hum;
+                        if (r.hum > b.humMax) b.humMax = r.hum;
+                    }
+                }
+
+                state.viewPoints = Array.from(buckets.values())
+                    .sort((a, b) => a.ts - b.ts)
+                    .map(b => {
+                        const tempC = b.tempCount > 0 ? Math.round((b.tempSum / b.tempCount) * 10) / 10 : null;
+                        const hum = b.humCount > 0 ? Math.round((b.humSum / b.humCount) * 10) / 10 : null;
+                        const derived = computeDerivedMetrics(tempC, hum);
+                        return {
+                            ts: b.ts,
+                            tempC,
+                            tempMinC: b.tempCount > 0 ? b.tempMinC : null,
+                            tempMaxC: b.tempCount > 0 ? b.tempMaxC : null,
+                            hum,
+                            humMin: b.humCount > 0 ? b.humMin : null,
+                            humMax: b.humCount > 0 ? b.humMax : null,
+                            dewC: derived.dewC,
+                            vpd: derived.vpd
+                        };
+                    });
+            }
+
+            // Default active point to latest point in window
+            state.scrubIndex = state.viewPoints.length > 0 ? state.viewPoints.length - 1 : null;
+            updateSummaryAndReadout();
+            drawAllCharts();
+        }
+
+        function updateSummaryAndReadout() {
+            const pts = state.viewPoints;
+            const unitSym = state.unit === 'F' ? '°F' : '°C';
+            document.querySelectorAll('.temp-unit-symbol').forEach(el => el.textContent = unitSym);
+
+            if (pts.length === 0) {
+                document.getElementById('scrubTimeDisplay').textContent = '--:--';
+                document.getElementById('scrubDateDisplay').textContent = 'No data in this period';
+                document.getElementById('scrubTempValue').textContent = '--.-';
+                document.getElementById('scrubHumValue').textContent = '--.-';
+                document.getElementById('scrubDewValue').textContent = '--.-';
+                document.getElementById('scrubVpdValue').textContent = '--.--';
+                ['statTempMin', 'statTempAvg', 'statTempMax', 'statHumMin', 'statHumAvg', 'statHumMax'].forEach(id => {
+                    document.getElementById(id).textContent = '--';
+                });
+                document.getElementById('tempRangeText').textContent = 'No readings';
+                document.getElementById('humRangeText').textContent = 'No readings';
+                return;
+            }
+
+            // Compute Period Min / Avg / Max
+            let tMin = Infinity, tMax = -Infinity, tSum = 0, tCnt = 0;
+            let hMin = Infinity, hMax = -Infinity, hSum = 0, hCnt = 0;
+
+            for (const p of pts) {
+                if (p.tempC !== null) {
+                    if (p.tempMinC < tMin) tMin = p.tempMinC;
+                    if (p.tempMaxC > tMax) tMax = p.tempMaxC;
+                    tSum += p.tempC;
+                    tCnt++;
+                }
+                if (p.hum !== null) {
+                    if (p.humMin < hMin) hMin = p.humMin;
+                    if (p.humMax > hMax) hMax = p.humMax;
+                    hSum += p.hum;
+                    hCnt++;
+                }
+            }
+
+            if (tCnt > 0) {
+                const avgC = tSum / tCnt;
+                document.getElementById('statTempMin').textContent = formatTemp(tMin) + '°';
+                document.getElementById('statTempAvg').textContent = formatTemp(avgC) + '°';
+                document.getElementById('statTempMax').textContent = formatTemp(tMax) + '°';
+                document.getElementById('tempRangeText').textContent = `Span: ${formatTemp(tMin)}${unitSym} – ${formatTemp(tMax)}${unitSym}`;
+            }
+
+            if (hCnt > 0) {
+                const avgH = hSum / hCnt;
+                document.getElementById('statHumMin').textContent = hMin.toFixed(0) + '%';
+                document.getElementById('statHumAvg').textContent = avgH.toFixed(0) + '%';
+                document.getElementById('statHumMax').textContent = hMax.toFixed(0) + '%';
+                document.getElementById('humRangeText').textContent = `Span: ${hMin.toFixed(0)}% – ${hMax.toFixed(0)}%`;
+            }
+
+            // Active Scrubbed Point Readout
+            const idx = state.scrubIndex !== null
+                ? Math.max(0, Math.min(pts.length - 1, state.scrubIndex))
+                : pts.length - 1;
+            const activePt = pts[idx];
+
+            const dt = new Date(activePt.ts);
+            if (state.scale === 'year') {
+                document.getElementById('scrubTimeDisplay').textContent = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                document.getElementById('scrubDateDisplay').textContent = `Daily Avg • ${dt.getFullYear()}`;
+            } else {
+                document.getElementById('scrubTimeDisplay').textContent = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('scrubDateDisplay').textContent = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+            }
+
+            document.getElementById('readoutStatusText').textContent = state.isScrubbing
+                ? 'Scrubbing Live'
+                : (idx === pts.length - 1 ? 'Window Latest' : `Point ${idx + 1}/${pts.length}`);
+
+            document.getElementById('scrubTempValue').textContent = formatTemp(activePt.tempC);
+            document.getElementById('scrubHumValue').textContent = activePt.hum !== null ? activePt.hum.toFixed(1) : '--.-';
+            document.getElementById('scrubDewValue').textContent = formatTemp(activePt.dewC);
+            document.getElementById('scrubVpdValue').textContent = activePt.vpd !== null ? activePt.vpd.toFixed(2) : '--.--';
+
+            // Comfort badges (SwitchBot style)
+            const tempBadge = document.getElementById('tempComfortBadge');
+            if (activePt.tempC !== null) {
+                if (activePt.tempC < 18) {
+                    tempBadge.textContent = 'Cool';
+                    tempBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30';
+                } else if (activePt.tempC <= 25) {
+                    tempBadge.textContent = 'Comfort';
+                    tempBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                } else {
+                    tempBadge.textContent = 'Warm';
+                    tempBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30';
+                }
+            }
+
+            const humBadge = document.getElementById('humComfortBadge');
+            if (activePt.hum !== null) {
+                if (activePt.hum < 35) {
+                    humBadge.textContent = 'Dry';
+                    humBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                } else if (activePt.hum <= 65) {
+                    humBadge.textContent = 'Ideal';
+                    humBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                } else {
+                    humBadge.textContent = 'Humid';
+                    humBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30';
+                }
+            }
+        }
+
+        const CHART_PADDING = { top: 34, right: 18, bottom: 26, left: 44 };
+
+        function drawAllCharts() {
+            drawMetricChart({
+                canvasId: 'tempCanvas',
+                points: state.viewPoints,
+                getValue: p => toDisplayTempNumber(p.tempC),
+                getMin: p => toDisplayTempNumber(p.tempMinC),
+                getMax: p => toDisplayTempNumber(p.tempMaxC),
+                strokeColor: '#EF4444',
+                fillTopColor: 'rgba(239, 68, 68, 0.35)',
+                fillBottomColor: 'rgba(239, 68, 68, 0.0)',
+                bandColor: 'rgba(239, 68, 68, 0.13)',
+                unitSuffix: state.unit === 'F' ? '°F' : '°C',
+                decimals: 1
+            });
+
+            drawMetricChart({
+                canvasId: 'humCanvas',
+                points: state.viewPoints,
+                getValue: p => p.hum,
+                getMin: p => p.humMin,
+                getMax: p => p.humMax,
+                strokeColor: '#0EA5E9',
+                fillTopColor: 'rgba(14, 165, 233, 0.35)',
+                fillBottomColor: 'rgba(14, 165, 233, 0.0)',
+                bandColor: 'rgba(14, 165, 233, 0.13)',
+                unitSuffix: '%',
+                decimals: 1
+            });
+
+            if (state.showExtraChart) {
+                drawMetricChart({
+                    canvasId: 'extraCanvas',
+                    points: state.viewPoints,
+                    getValue: p => toDisplayTempNumber(p.dewC),
+                    getMin: p => toDisplayTempNumber(p.dewC),
+                    getMax: p => toDisplayTempNumber(p.dewC),
+                    strokeColor: '#14B8A6',
+                    fillTopColor: 'rgba(20, 184, 166, 0.30)',
+                    fillBottomColor: 'rgba(20, 184, 166, 0.0)',
+                    bandColor: 'rgba(20, 184, 166, 0.1)',
+                    unitSuffix: state.unit === 'F' ? '°F' : '°C',
+                    decimals: 1
+                });
+            }
+        }
+
+        function drawMetricChart(cfg) {
+            const canvas = document.getElementById(cfg.canvasId);
+            if (!canvas) return;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const width = rect.width;
+            const height = rect.height;
+
+            if (width === 0 || height === 0) return;
+
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+
+            ctx.clearRect(0, 0, width, height);
+
+            const plotLeft = CHART_PADDING.left;
+            const plotRight = width - CHART_PADDING.right;
+            const plotTop = CHART_PADDING.top;
+            const plotBottom = height - CHART_PADDING.bottom;
+            const plotW = Math.max(10, plotRight - plotLeft);
+            const plotH = Math.max(10, plotBottom - plotTop);
+
+            const pts = cfg.points;
+            if (!pts || pts.length === 0) {
+                ctx.fillStyle = '#64748B';
+                ctx.font = '500 12px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No sensor readings recorded for this period', width / 2, height / 2);
+                return;
+            }
+
+            // Compute Y-axis domain with breathing room
+            let yMin = Infinity;
+            let yMax = -Infinity;
+            for (const p of pts) {
+                const v = cfg.getValue(p);
+                const vmin = cfg.getMin(p);
+                const vmax = cfg.getMax(p);
+                if (v !== null && !isNaN(v)) {
+                    if (v < yMin) yMin = v;
+                    if (v > yMax) yMax = v;
+                }
+                if (vmin !== null && !isNaN(vmin) && vmin < yMin) yMin = vmin;
+                if (vmax !== null && !isNaN(vmax) && vmax > yMax) yMax = vmax;
+            }
+
+            if (yMin === Infinity || yMax === -Infinity) return;
+
+            const span = Math.max(1.5, yMax - yMin);
+            const domainMin = Math.floor((yMin - span * 0.15) * 2) / 2;
+            const domainMax = Math.ceil((yMax + span * 0.15) * 2) / 2;
+            const domainSpan = Math.max(1, domainMax - domainMin);
+
+            const getX = (idx) => {
+                if (pts.length === 1) return plotLeft + plotW / 2;
+                return plotLeft + (idx / (pts.length - 1)) * plotW;
+            };
+            const getY = (val) => {
+                return plotBottom - ((val - domainMin) / domainSpan) * plotH;
+            };
+
+            // 1. Horizontal Gridlines & Y-Axis Labels
+            const gridSteps = 4;
+            ctx.font = '500 10px "JetBrains Mono", monospace';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+
+            for (let i = 0; i <= gridSteps; i++) {
+                const ratio = i / gridSteps;
+                const y = plotBottom - ratio * plotH;
+                const val = domainMin + ratio * domainSpan;
+
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(plotLeft, y);
+                ctx.lineTo(plotRight, y);
+                ctx.stroke();
+
+                ctx.fillStyle = '#64748B';
+                ctx.fillText(val.toFixed(cfg.decimals === 0 ? 0 : 1), plotLeft - 6, y);
+            }
+
+            // 2. X-Axis Time Labels
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#64748B';
+            const tickCount = Math.min(pts.length, width < 480 ? 4 : 6);
+            for (let i = 0; i < tickCount; i++) {
+                const idx = tickCount === 1 ? 0 : Math.round((i / (tickCount - 1)) * (pts.length - 1));
+                const x = getX(idx);
+                const dt = new Date(pts[idx].ts);
+                let label = '';
+                if (state.scale === 'day') {
+                    label = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                } else if (state.scale === 'week') {
+                    label = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+                } else if (state.scale === 'month') {
+                    label = dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                } else {
+                    label = dt.toLocaleDateString('en-GB', { month: 'short' });
+                }
+                ctx.fillText(label, x, plotBottom + 7);
+            }
+
+            // 3. Draw Min-Max Envelope Band (visible on Week/Month/Year views)
+            if (state.scale !== 'day' && pts.length > 1) {
+                ctx.fillStyle = cfg.bandColor;
+                ctx.beginPath();
+                let started = false;
+                for (let i = 0; i < pts.length; i++) {
+                    const vmax = cfg.getMax(pts[i]);
+                    if (vmax === null) continue;
+                    const x = getX(i);
+                    const y = getY(vmax);
+                    if (!started) {
+                        ctx.moveTo(x, y);
+                        started = true;
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                for (let i = pts.length - 1; i >= 0; i--) {
+                    const vmin = cfg.getMin(pts[i]);
+                    if (vmin === null) continue;
+                    ctx.lineTo(getX(i), getY(vmin));
+                }
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Build valid coordinates array
+            const coords = [];
+            for (let i = 0; i < pts.length; i++) {
+                const v = cfg.getValue(pts[i]);
+                if (v !== null && !isNaN(v)) {
+                    coords.push({ x: getX(i), y: getY(v), val: v, ts: pts[i].ts, idx: i });
+                }
+            }
+
+            if (coords.length === 0) return;
+
+            // 4. Gradient Area Under Curve
+            const grad = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
+            grad.addColorStop(0, cfg.fillTopColor);
+            grad.addColorStop(1, cfg.fillBottomColor);
+
+            ctx.beginPath();
+            ctx.moveTo(coords[0].x, plotBottom);
+            for (let i = 0; i < coords.length; i++) {
+                if (i === 0) {
+                    ctx.lineTo(coords[i].x, coords[i].y);
+                } else {
+                    const prev = coords[i - 1];
+                    const curr = coords[i];
+                    const midX = (prev.x + curr.x) / 2;
+                    ctx.bezierCurveTo(midX, prev.y, midX, curr.y, curr.x, curr.y);
+                }
+            }
+            ctx.lineTo(coords[coords.length - 1].x, plotBottom);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // 5. Smooth Spline Curve Stroke
+            ctx.beginPath();
+            for (let i = 0; i < coords.length; i++) {
+                if (i === 0) {
+                    ctx.moveTo(coords[i].x, coords[i].y);
+                } else {
+                    const prev = coords[i - 1];
+                    const curr = coords[i];
+                    const midX = (prev.x + curr.x) / 2;
+                    ctx.bezierCurveTo(midX, prev.y, midX, curr.y, curr.x, curr.y);
+                }
+            }
+            ctx.strokeStyle = cfg.strokeColor;
+            ctx.lineWidth = 2.25;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // 6. SwitchBot-Style Vertical Scrubbing Line, Glowing Node, and Floating Callout Pill
+            const targetIdx = state.scrubIndex !== null
+                ? Math.max(0, Math.min(pts.length - 1, state.scrubIndex))
+                : pts.length - 1;
+
+            const activeVal = cfg.getValue(pts[targetIdx]);
+            if (activeVal !== null && !isNaN(activeVal)) {
+                const cx = getX(targetIdx);
+                const cy = getY(activeVal);
+
+                // Vertical dashed/solid guide line
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([4, 3]);
+                ctx.strokeStyle = 'rgba(248, 250, 252, 0.65)';
+                ctx.lineWidth = 1.25;
+                ctx.moveTo(cx, plotTop - 4);
+                ctx.lineTo(cx, plotBottom);
+                ctx.stroke();
+                ctx.restore();
+
+                // Horizontal subtle hair-line to Y axis
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]);
+                ctx.strokeStyle = 'rgba(248, 250, 252, 0.22)';
+                ctx.lineWidth = 1;
+                ctx.moveTo(plotLeft, cy);
+                ctx.lineTo(cx, cy);
+                ctx.stroke();
+                ctx.restore();
+
+                // Outer glow circle
+                ctx.beginPath();
+                ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+                ctx.fillStyle = cfg.fillTopColor;
+                ctx.fill();
+
+                // Inner crisp point marker
+                ctx.beginPath();
+                ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+                ctx.fillStyle = cfg.strokeColor;
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.stroke();
+
+                // Floating SwitchBot Callout Badge at top of vertical line
+                const dt = new Date(pts[targetIdx].ts);
+                const timeStr = state.scale === 'year'
+                    ? dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                    : dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                const valStr = `${activeVal.toFixed(cfg.decimals)}${cfg.unitSuffix}`;
+                const badgeText = `${valStr} • ${timeStr}`;
+
+                ctx.font = '600 11px "JetBrains Mono", monospace';
+                const textWidth = ctx.measureText(badgeText).width;
+                const pillW = textWidth + 16;
+                const pillH = 22;
+                const pillX = Math.max(plotLeft, Math.min(plotRight - pillW, cx - pillW / 2));
+                const pillY = 6;
+
+                // Rounded Pill Background
+                ctx.fillStyle = '#1E293B';
+                ctx.strokeStyle = cfg.strokeColor;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+                ctx.fill();
+                ctx.stroke();
+
+                // Badge Text
+                ctx.fillStyle = '#F8FAFC';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(badgeText, pillX + 8, pillY + pillH / 2 + 0.5);
+            }
+        }
+
+        function bindCanvasScrubbing(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            const updateScrubFromClientX = (clientX) => {
+                if (!state.viewPoints || state.viewPoints.length === 0) return;
+                const rect = canvas.getBoundingClientRect();
+                const plotLeft = CHART_PADDING.left;
+                const plotRight = rect.width - CHART_PADDING.right;
+                const plotW = Math.max(10, plotRight - plotLeft);
+
+                const relX = clientX - rect.left - plotLeft;
+                const ratio = Math.max(0, Math.min(1, relX / plotW));
+                const newIdx = Math.round(ratio * (state.viewPoints.length - 1));
+
+                if (state.scrubIndex !== newIdx || !state.isScrubbing) {
+                    state.scrubIndex = newIdx;
+                    state.isScrubbing = true;
+                    updateSummaryAndReadout();
+                    drawAllCharts();
+                }
+            };
+
+            // Mouse interactions
+            canvas.addEventListener('mousedown', (e) => {
+                state.isScrubbing = true;
+                updateScrubFromClientX(e.clientX);
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (state.isScrubbing && e.buttons === 1) {
+                    updateScrubFromClientX(e.clientX);
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (state.isScrubbing) {
+                    state.isScrubbing = false;
+                    updateSummaryAndReadout();
+                }
+            });
+
+            // Touch interactions (SwitchBot mobile tap & horizontal drag)
+            canvas.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    state.isScrubbing = true;
+                    updateScrubFromClientX(e.touches[0].clientX);
+                }
+            }, { passive: true });
+
+            canvas.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 1) {
+                    e.preventDefault(); // Keep finger locked to timeline scrubbing
+                    updateScrubFromClientX(e.touches[0].clientX);
+                }
+            }, { passive: false });
+
+            canvas.addEventListener('touchend', () => {
+                state.isScrubbing = false;
+                updateSummaryAndReadout();
+            });
+        }
+
+        async function processFiles(fileList) {
+            if (!fileList || fileList.length === 0) return;
+
+            for (const file of fileList) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+                    if (!rows || rows.length < 2) {
+                        showToast(`File "${file.name}" appears empty.`, true);
+                        continue;
+                    }
+
+                    // Locate header row (skip initial metadata banner lines if present in SwitchBot exports)
+                    let headerRowIdx = 0;
+                    for (let r = 0; r < Math.min(10, rows.length); r++) {
+                        const rowStr = rows[r].join(' ').toLowerCase();
+                        if (rowStr.includes('date') || rowStr.includes('time') || rowStr.includes('temp') || rowStr.includes('hum')) {
+                            headerRowIdx = r;
+                            break;
+                        }
+                    }
+
+                    const headers = rows[headerRowIdx].map((h, i) => String(h || `Column ${i + 1}`).trim());
+                    const dataRows = rows.slice(headerRowIdx + 1).filter(r => r.some(cell => cell !== ''));
+
+                    state.lastRawSheet = {
+                        fileName: file.name,
+                        headers,
+                        dataRows
+                    };
+
+                    const detected = detectColumns(headers);
+
+                    // Try automatic extraction first
+                    const extracted = extractRecordsWithMapping(
+                        dataRows,
+                        detected.timeCol,
+                        detected.tempCol,
+                        detected.humCol,
+                        detected.tempIsFahrenheit ? 'F' : 'auto'
+                    );
+
+                    if (extracted.length > 0) {
+                        mergeRecordsIntoState(extracted, file.name);
+                    } else {
+                        // Open column mapper modal so user can pick columns manually
+                        openMappingModal(state.lastRawSheet, detected);
+                    }
+                } catch (err) {
+                    console.error('Error parsing spreadsheet:', err);
+                    showToast(`Could not parse "${file.name}". Please check the format.`, true);
+                }
+            }
+        }
+
+        function extractRecordsWithMapping(dataRows, timeCol, tempCol, humCol, unitMode) {
+            const results = [];
+            for (const row of dataRows) {
+                const ts = parseFlexibleTimestamp(row[timeCol]);
+                if (!ts) continue;
+
+                let rawTemp = tempCol >= 0 ? parseNumericCell(row[tempCol]) : null;
+                let rawHum = humCol >= 0 ? parseNumericCell(row[humCol]) : null;
+
+                if (rawTemp !== null) {
+                    if (unitMode === 'F' || (unitMode === 'auto' && rawTemp > 58 && rawTemp < 130)) {
+                        // Convert Fahrenheit to internal Celsius
+                        rawTemp = (rawTemp - 32) * 5 / 9;
+                    }
+                }
+
+                if (rawTemp !== null || rawHum !== null) {
+                    results.push({ ts, tempC: rawTemp, hum: rawHum });
+                }
+            }
+            return results;
+        }
+
+        function openMappingModal(sheetObj, detected = null) {
+            if (!sheetObj) {
+                showToast('Import a spreadsheet first to configure column mapping.', true);
+                return;
+            }
+            const modal = document.getElementById('mappingModal');
+            document.getElementById('modalFileName').textContent = sheetObj.fileName;
+
+            const timeSelect = document.getElementById('mapTimeSelect');
+            const tempSelect = document.getElementById('mapTempSelect');
+            const humSelect = document.getElementById('mapHumSelect');
+
+            const cols = detected || detectColumns(sheetObj.headers);
+
+            const optionsHtml = sheetObj.headers.map((h, i) => `<option value="${i}">${h}</option>`).join('');
+            timeSelect.innerHTML = optionsHtml;
+            tempSelect.innerHTML = optionsHtml;
+            humSelect.innerHTML = `<option value="-1">-- None --</option>` + optionsHtml;
+
+            if (cols.timeCol >= 0) timeSelect.value = String(cols.timeCol);
+            if (cols.tempCol >= 0) tempSelect.value = String(cols.tempCol);
+            if (cols.humCol >= 0) humSelect.value = String(cols.humCol);
+
+            // Render 3-row preview table
+            const previewTable = document.getElementById('modalPreviewTable');
+            const sampleRows = sheetObj.dataRows.slice(0, 3);
+            let thead = `<tr class="border-b border-slate-800 text-slate-400">` +
+                sheetObj.headers.map(h => `<th class="py-1 px-2">${h}</th>`).join('') + `</tr>`;
+            let tbody = sampleRows.map(r => `<tr class="border-b border-slate-800/50">` +
+                sheetObj.headers.map((_, i) => `<td class="py-1 px-2 truncate max-w-[120px]">${r[i] !== undefined ? r[i] : ''}</td>`).join('') +
+                `</tr>`).join('');
+            previewTable.innerHTML = `<thead>${thead}</thead><tbody>${tbody}</tbody>`;
+
+            modal.classList.remove('hidden');
+        }
+
+        function renderImportHistory() {
+            const container = document.getElementById('importLogList');
+            if (!state.importHistory || state.importHistory.length === 0) {
+                container.innerHTML = `<div class="text-slate-500 py-2">No imports yet.</div>`;
+                return;
+            }
+
+            container.innerHTML = state.importHistory.map(item => {
+                const dt = new Date(item.timestamp);
+                const timeStr = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                return `
+                    <div class="flex items-center justify-between bg-sbDark/80 border border-slate-800/80 rounded-xl px-2.5 py-1.5">
+                        <div class="truncate pr-2">
+                            <div class="font-medium text-slate-200 truncate">${item.name}</div>
+                            <div class="text-[10px] font-mono text-slate-400">+${item.added} new • ${item.updated} upd</div>
+                        </div>
+                        <span class="text-[10px] font-mono text-slate-500 shrink-0">${timeStr}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function exportMergedCsv() {
+            if (state.sortedRecords.length === 0) {
+                showToast('No sensor data to export.', true);
+                return;
+            }
+            const unitLabel = state.unit === 'F' ? 'Temperature_F' : 'Temperature_C';
+            const dewLabel = state.unit === 'F' ? 'DewPoint_F' : 'DewPoint_C';
+            const lines = [`Timestamp,ISO_Date,${unitLabel},Relative_Humidity_Pct,${dewLabel},VPD_kPa`];
+
+            for (const r of state.sortedRecords) {
+                const iso = new Date(r.ts).toISOString();
+                const t = formatTemp(r.tempC);
+                const h = r.hum !== null ? r.hum.toFixed(1) : '';
+                const d = formatTemp(r.dewC);
+                const v = r.vpd !== null ? r.vpd.toFixed(2) : '';
+                lines.push(`${r.ts},${iso},${t},${h},${d},${v}`);
+            }
+
+            const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const activeSensor = state.sensors.find(s => s.id === state.activeSensorId);
+            const safeRoomName = (activeSensor ? activeSensor.name : 'room').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            a.href = url;
+            a.download = `switchbot_${safeRoomName}_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`Exported ${state.sortedRecords.length.toLocaleString()} merged records to CSV.`);
+        }
+
+        function openAddSensorModal(editSensorId = null) {
+            state.editingSensorId = editSensorId;
+            const modal = document.getElementById('sensorModal');
+            const nameInput = document.getElementById('sensorNameInput');
+            const seedWrap = document.getElementById('initialSeedOptionWrap');
+            const seedCheck = document.getElementById('seedDemoCheckbox');
+
+            if (editSensorId) {
+                const sensor = state.sensors.find(s => s.id === editSensorId);
+                document.getElementById('sensorModalTitle').textContent = 'Rename / Customize Room';
+                nameInput.value = sensor ? sensor.name : '';
+                state.selectedModalIcon = sensor ? sensor.icon : 'sofa';
+                seedWrap.classList.add('hidden');
+            } else {
+                document.getElementById('sensorModalTitle').textContent = 'Add New Room / Sensor';
+                nameInput.value = '';
+                state.selectedModalIcon = 'sofa';
+                seedCheck.checked = false;
+                seedWrap.classList.remove('hidden');
+            }
+
+            updateIconPickerSelection();
+            modal.classList.remove('hidden');
+            setTimeout(() => nameInput.focus(), 50);
+        }
+
+        function updateIconPickerSelection() {
+            document.querySelectorAll('.icon-pick-btn').forEach(btn => {
+                if (btn.dataset.icon === state.selectedModalIcon) {
+                    btn.className = 'icon-pick-btn p-2.5 rounded-xl bg-red-500/20 border border-red-500 text-red-400 flex items-center justify-center';
+                } else {
+                    btn.className = 'icon-pick-btn p-2.5 rounded-xl bg-sbDark border border-sbBorder text-slate-400 hover:text-white flex items-center justify-center';
+                }
+            });
+        }
+
+        function saveSensorFromModal() {
+            const nameInput = document.getElementById('sensorNameInput');
+            const rawName = nameInput.value.trim();
+            if (!rawName) {
+                showToast('Please enter a room or sensor name.', true);
+                return;
+            }
+
+            if (state.editingSensorId) {
+                const sensor = state.sensors.find(s => s.id === state.editingSensorId);
+                if (sensor) {
+                    sensor.name = rawName;
+                    sensor.icon = state.selectedModalIcon;
+                }
+                saveStateToStorage();
+                if (state.currentView === 'detail') {
+                    document.getElementById('headerTitle').textContent = rawName;
+                    document.getElementById('activeRoomUploadLabel').textContent = rawName;
+                    renderQuickRoomPills();
+                } else {
+                    renderOverviewCards();
+                }
+                showToast(`Updated room "${rawName}".`);
+            } else {
+                const newId = 'room_' + Date.now();
+                const newSensor = {
+                    id: newId,
+                    name: rawName,
+                    icon: state.selectedModalIcon,
+                    importHistory: []
+                };
+                state.sensors.push(newSensor);
+                state.sensorRecordsMap.set(newId, new Map());
+
+                const shouldSeed = document.getElementById('seedDemoCheckbox').checked;
+                if (shouldSeed) {
+                    populateDemoDataForSensor(newId, 60, 20.0 + (Math.random() * 2 - 1), 50);
+                }
+
+                setActiveSensor(newId);
+                saveAllSensorsToStorage();
+                renderOverviewCards();
+                showToast(`Created room "${rawName}". Tap it to view graphs or upload spreadsheets!`);
+            }
+
+            document.getElementById('sensorModal').classList.add('hidden');
+        }
+
+        function exportFullHubBackup() {
+            const payload = {
+                version: 2,
+                exportedAt: new Date().toISOString(),
+                sensors: state.sensors,
+                recordsBySensor: {}
+            };
+            for (const s of state.sensors) {
+                const sorted = getSensorSortedArray(s.id);
+                payload.recordsBySensor[s.id] = sorted.map(r => [r.ts, r.tempC, r.hum]);
+            }
+            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `switchbot_hub_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Downloaded full backup of all rooms and sensor histories.');
+        }
+
+        async function restoreFullHubBackup(file) {
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                if (!data.sensors || !Array.isArray(data.sensors)) {
+                    showToast('Invalid backup file format.', true);
+                    return;
+                }
+                state.sensors = data.sensors;
+                state.sensorRecordsMap.clear();
+                for (const s of state.sensors) {
+                    const map = new Map();
+                    const arr = (data.recordsBySensor && data.recordsBySensor[s.id]) || [];
+                    for (const [ts, tempC, hum] of arr) {
+                        const derived = computeDerivedMetrics(tempC, hum);
+                        map.set(ts, { ts, tempC, hum, dewC: derived.dewC, vpd: derived.vpd });
+                    }
+                    state.sensorRecordsMap.set(s.id, map);
+                }
+                setActiveSensor(state.sensors[0].id);
+                saveAllSensorsToStorage();
+                navigateToOverview();
+                showToast(`Restored ${state.sensors.length} rooms from backup!`);
+            } catch (e) {
+                console.error(e);
+                showToast('Could not restore backup file.', true);
+            }
+        }
+
+        function downloadSelfContainedHtmlApp() {
+            const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'index.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('Downloaded index.html! You can open it in Chrome or upload it to Tiiny.host / Netlify Drop.');
+        }
+
+        function copyFullAppCodeToClipboard() {
+            const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+            const textArea = document.createElement('textarea');
+            textArea.value = htmlContent;
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                const btnText = document.getElementById('copySourceBtnText');
+                const bannerText = document.getElementById('bannerCopyBtnText');
+                if (btnText) btnText.textContent = 'Copied Full HTML!';
+                if (bannerText) bannerText.textContent = 'Copied!';
+                showToast('Copied entire app code to clipboard!');
+                setTimeout(() => {
+                    if (btnText) btnText.textContent = 'Or Copy App Code';
+                    if (bannerText) bannerText.textContent = 'Copy App Code';
+                }, 3000);
+            } catch (err) {
+                showToast('Could not copy automatically.', true);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function setupDynamicPwaManifest() {
+            try {
+                const manifest = {
+                    name: 'SwitchBot Multi-Room Climate Hub',
+                    short_name: 'Climate Hub',
+                    start_url: '.',
+                    display: 'standalone',
+                    background_color: '#0B0F17',
+                    theme_color: '#0B0F17',
+                    icons: [{
+                        src: 'https://placehold.co/192x192/EF4444/FFFFFF.png?text=SB',
+                        sizes: '192x192',
+                        type: 'image/png'
+                    }]
+                };
+                const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+                const link = document.createElement('link');
+                link.rel = 'manifest';
+                link.href = URL.createObjectURL(blob);
+                document.head.appendChild(link);
+            } catch (e) {}
+
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                state.deferredPwaPrompt = e;
+                document.getElementById('nativePwaPromptWrap')?.classList.remove('hidden');
+            });
+        }
+
+        let toastTimeout = null;
+        function showToast(msg, isWarning = false) {
+            const banner = document.getElementById('toastBanner');
+            const text = document.getElementById('toastMessage');
+            text.textContent = msg;
+            banner.className = isWarning
+                ? 'rounded-xl bg-amber-950/90 border border-amber-500/40 px-4 py-2.5 text-xs text-amber-200 flex items-center justify-between transition-all'
+                : 'rounded-xl bg-emerald-950/90 border border-emerald-500/40 px-4 py-2.5 text-xs text-emerald-200 flex items-center justify-between transition-all';
+            banner.classList.remove('hidden');
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(hideToast, 5000);
+        }
+
+        function hideToast() {
+            document.getElementById('toastBanner').classList.add('hidden');
+        }
+
+        // Initialize UI & Event Listeners on Window Load
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setupDynamicPwaManifest();
+
+            // Load persisted multi-room state or initialize default Living Room, Kitchen & Bedroom
+            const hasSaved = loadStateFromStorage();
+            if (!hasSaved) {
+                initializeDefaultRoomsWithDemo();
+            }
+
+            // Start on the Multi-Room Overview Hub screen
+            navigateToOverview();
+
+            // Navigation between Overview and Detail View
+            document.getElementById('backToOverviewBtn').addEventListener('click', () => {
+                navigateToOverview();
+            });
+
+            document.getElementById('addSensorHeaderBtn').addEventListener('click', () => {
+                openAddSensorModal(null);
+            });
+
+            document.getElementById('renameRoomBtn').addEventListener('click', () => {
+                if (state.activeSensorId) openAddSensorModal(state.activeSensorId);
+            });
+
+            document.getElementById('quickUploadRoomBtn').addEventListener('click', () => {
+                document.getElementById('fileInput').click();
+            });
+
+            // Add / Edit Room Modal Events
+            document.querySelectorAll('.icon-pick-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.selectedModalIcon = btn.dataset.icon;
+                    updateIconPickerSelection();
+                });
+            });
+            document.getElementById('closeSensorModalBtn').addEventListener('click', () => {
+                document.getElementById('sensorModal').classList.add('hidden');
+            });
+            document.getElementById('cancelSensorModalBtn').addEventListener('click', () => {
+                document.getElementById('sensorModal').classList.add('hidden');
+            });
+            document.getElementById('saveSensorModalBtn').addEventListener('click', saveSensorFromModal);
+            document.getElementById('sensorNameInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') saveSensorFromModal();
+            });
+
+            // Install / Download App Modal Events
+            document.getElementById('installGuideBtn').addEventListener('click', () => {
+                document.getElementById('installModal').classList.remove('hidden');
+            });
+            document.getElementById('closeInstallModalBtn').addEventListener('click', () => {
+                document.getElementById('installModal').classList.add('hidden');
+            });
+            document.getElementById('downloadStandaloneHtmlBtn').addEventListener('click', downloadSelfContainedHtmlApp);
+            document.getElementById('copySourceCodeBtn').addEventListener('click', copyFullAppCodeToClipboard);
+            document.getElementById('triggerNativePwaBtn').addEventListener('click', async () => {
+                if (state.deferredPwaPrompt) {
+                    state.deferredPwaPrompt.prompt();
+                    await state.deferredPwaPrompt.userChoice;
+                    state.deferredPwaPrompt = null;
+                    document.getElementById('nativePwaPromptWrap').classList.add('hidden');
+                }
+            });
+
+            // Full Hub Backup & Restore
+            document.getElementById('backupAllBtn').addEventListener('click', exportFullHubBackup);
+            const backupInput = document.getElementById('backupFileInput');
+            document.getElementById('restoreBackupBtn').addEventListener('click', () => backupInput.click());
+            backupInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    restoreFullHubBackup(e.target.files[0]);
+                    backupInput.value = '';
+                }
+            });
+
+            // Bind interactive scrubbing on all 3 canvases
+            bindCanvasScrubbing('tempCanvas');
+            bindCanvasScrubbing('humCanvas');
+            bindCanvasScrubbing('extraCanvas');
+
+            // Scale Tab clicks (Day / Week / Month / Year)
+            document.querySelectorAll('.scale-tab').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.scale = btn.dataset.scale;
+                    refreshTimeWindow();
+                });
+            });
+
+            // Period Navigation (Prev / Next / Latest)
+            document.getElementById('prevPeriodBtn').addEventListener('click', () => shiftPeriod(-1));
+            document.getElementById('nextPeriodBtn').addEventListener('click', () => shiftPeriod(1));
+            document.getElementById('jumpLatestBtn').addEventListener('click', () => {
+                if (state.sortedRecords.length > 0) {
+                    state.anchorTs = state.sortedRecords[state.sortedRecords.length - 1].ts;
+                    refreshTimeWindow();
+                }
+            });
+
+            // Single-point fine stepping buttons
+            document.getElementById('stepPrevPointBtn').addEventListener('click', () => {
+                if (state.viewPoints.length === 0) return;
+                const curr = state.scrubIndex !== null ? state.scrubIndex : state.viewPoints.length - 1;
+                state.scrubIndex = Math.max(0, curr - 1);
+                updateSummaryAndReadout();
+                drawAllCharts();
+            });
+
+            document.getElementById('stepNextPointBtn').addEventListener('click', () => {
+                if (state.viewPoints.length === 0) return;
+                const curr = state.scrubIndex !== null ? state.scrubIndex : state.viewPoints.length - 1;
+                state.scrubIndex = Math.min(state.viewPoints.length - 1, curr + 1);
+                updateSummaryAndReadout();
+                drawAllCharts();
+            });
+
+            // Keyboard left/right arrow support
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowLeft') {
+                    document.getElementById('stepPrevPointBtn').click();
+                } else if (e.key === 'ArrowRight') {
+                    document.getElementById('stepNextPointBtn').click();
+                }
+            });
+
+            // Temperature Unit Toggle (°C / °F)
+            document.getElementById('unitToggleBtn').addEventListener('click', () => {
+                state.unit = state.unit === 'C' ? 'F' : 'C';
+                document.getElementById('unitLabelC').className = state.unit === 'C' ? 'text-red-400 font-bold' : 'text-slate-500';
+                document.getElementById('unitLabelF').className = state.unit === 'F' ? 'text-red-400 font-bold' : 'text-slate-500';
+                if (state.currentView === 'overview') {
+                    renderOverviewCards();
+                } else {
+                    updateSummaryAndReadout();
+                    drawAllCharts();
+                }
+            });
+
+            // Toggle Extra Dew Point / VPD Chart
+            document.getElementById('toggleExtraChartBtn').addEventListener('click', (e) => {
+                state.showExtraChart = !state.showExtraChart;
+                const container = document.getElementById('extraChartContainer');
+                if (state.showExtraChart) {
+                    container.classList.remove('hidden');
+                    e.currentTarget.textContent = 'Hide VPD / Dew';
+                } else {
+                    container.classList.add('hidden');
+                    e.currentTarget.textContent = '+ Show VPD / Dew';
+                }
+                drawAllCharts();
+            });
+
+            // File Import Triggers
+            const fileInput = document.getElementById('fileInput');
+            document.getElementById('importBtn').addEventListener('click', () => fileInput.click());
+            document.getElementById('dropZone').addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', (e) => {
+                processFiles(e.target.files);
+                fileInput.value = '';
+            });
+
+            // Drag & Drop Listeners
+            const dropZone = document.getElementById('dropZone');
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-red-500', 'bg-red-500/5');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-red-500', 'bg-red-500/5');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-red-500', 'bg-red-500/5');
+                if (e.dataTransfer && e.dataTransfer.files) {
+                    processFiles(e.dataTransfer.files);
+                }
+            });
+
+            // Demo Data & Reset Buttons (Scoped to active room)
+            document.getElementById('demoDataBtn').addEventListener('click', () => {
+                const activeSensor = state.sensors.find(s => s.id === state.activeSensorId);
+                generateRealisticDemoData(90);
+                showToast(`Loaded 90 days of sample telemetry into "${activeSensor ? activeSensor.name : 'Room'}".`);
+            });
+
+            document.getElementById('clearDataBtn').addEventListener('click', () => {
+                const activeSensor = state.sensors.find(s => s.id === state.activeSensorId);
+                state.recordsMap.clear();
+                state.sortedRecords = [];
+                state.viewPoints = [];
+                state.importHistory = [];
+                if (activeSensor) activeSensor.importHistory = [];
+                if (state.activeSensorId) {
+                    localStorage.removeItem(SENSOR_DATA_PREFIX + state.activeSensorId);
+                }
+                saveStateToStorage();
+                rebuildSortedRecords();
+                renderQuickRoomPills();
+                refreshTimeWindow();
+                renderImportHistory();
+                showToast(`Cleared all climate data for "${activeSensor ? activeSensor.name : 'this room'}".`);
+            });
+
+            document.getElementById('exportCsvBtn').addEventListener('click', exportMergedCsv);
+
+            // Column Mapper Modal Controls
+            document.getElementById('manualMappingBtn').addEventListener('click', () => {
+                openMappingModal(state.lastRawSheet);
+            });
+            document.getElementById('closeModalBtn').addEventListener('click', () => {
+                document.getElementById('mappingModal').classList.add('hidden');
+            });
+            document.getElementById('cancelModalBtn').addEventListener('click', () => {
+                document.getElementById('mappingModal').classList.add('hidden');
+            });
+            document.getElementById('confirmMappingBtn').addEventListener('click', () => {
+                if (!state.lastRawSheet) return;
+                const tCol = parseInt(document.getElementById('mapTimeSelect').value, 10);
+                const tempCol = parseInt(document.getElementById('mapTempSelect').value, 10);
+                const humCol = parseInt(document.getElementById('mapHumSelect').value, 10);
+                const unitMode = document.getElementById('mapTempUnitSelect').value;
+
+                const extracted = extractRecordsWithMapping(state.lastRawSheet.dataRows, tCol, tempCol, humCol, unitMode);
+                document.getElementById('mappingModal').classList.add('hidden');
+                mergeRecordsIntoState(extracted, state.lastRawSheet.fileName);
+            });
+
+            // Redraw charts cleanly on window resize
+            window.addEventListener('resize', () => {
+                if (state.currentView === 'overview') {
+                    state.sensors.forEach(s => drawRoomSparkline(s.id));
+                } else {
+                    drawAllCharts();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
